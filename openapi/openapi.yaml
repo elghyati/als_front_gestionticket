@@ -1,0 +1,547 @@
+openapi: 3.1.0
+info:
+  title: ALS Front – MVP API contract
+  version: 0.1.0
+  description: |
+    Contract between the MVP front-end (kiosk and portal) and the back-end
+    services (Agent, KMS-Supervision, KMS-Routeur), which are not ready yet.
+    The front-end builds against this contract and the MSW mock in `src/mocks`.
+
+    **Status: DRAFT** – frozen on Mon 12 Oct. After the freeze, changes go
+    through a documented change request with the affected owners.
+
+    Conventions:
+    - Every request carries an `X-Correlation-Id` header (UUID); every response
+      and every error echoes it.
+    - Every error uses the `Error` schema.
+    - Amounts are decimal numbers in the account currency (ISO 4217 code).
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+
+servers:
+  - url: /api/v1
+    description: Same origin (MSW mock in dev, reverse proxy later)
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+    description: Authentication (kiosk card/PIN and portal user login)
+  - name: accounts
+    description: Balance and history
+  - name: transactions
+    description: Deposits
+  - name: terminals
+    description: Terminal list and detail (portal, KMS-Supervision)
+
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: login
+      summary: Log in and get an access token
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /accounts/{accountId}/balance:
+    get:
+      tags: [accounts]
+      operationId: getBalance
+      summary: Get the balance of an account
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/AccountId'
+      responses:
+        '200':
+          description: Current balance
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balance'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /accounts/{accountId}/transactions:
+    get:
+      tags: [accounts]
+      operationId: listTransactions
+      summary: Get the transaction history of an account (newest first)
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/AccountId'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque cursor returned as `nextCursor` by the previous page
+          schema:
+            type: string
+      responses:
+        '200':
+          description: One page of history
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /deposits:
+    post:
+      tags: [transactions]
+      operationId: createDeposit
+      summary: Make a deposit
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Unique per deposit attempt; a retry with the same key must not deposit twice
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositRequest'
+      responses:
+        '201':
+          description: Deposit accepted
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /terminals:
+    get:
+      tags: [terminals]
+      operationId: listTerminals
+      summary: List the terminals
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/TerminalStatus'
+      responses:
+        '200':
+          description: Terminals
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TerminalSummary'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /terminals/{terminalId}:
+    get:
+      tags: [terminals]
+      operationId: getTerminal
+      summary: Get the detail of a terminal
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: terminalId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Terminal detail
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminalDetail'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: true
+      description: Generated by the front-end per user action, propagated end to end
+      schema:
+        type: string
+        format: uuid
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  headers:
+    CorrelationId:
+      description: Echo of the request correlation id
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    LoginRequest:
+      oneOf:
+        - $ref: '#/components/schemas/KioskLogin'
+        - $ref: '#/components/schemas/PortalLogin'
+      discriminator:
+        propertyName: channel
+        mapping:
+          KIOSK: '#/components/schemas/KioskLogin'
+          PORTAL: '#/components/schemas/PortalLogin'
+    KioskLogin:
+      type: object
+      required: [channel, cardNumber, pin, terminalId]
+      properties:
+        channel:
+          const: KIOSK
+        cardNumber:
+          type: string
+        pin:
+          type: string
+          pattern: '^[0-9]{4,6}$'
+        terminalId:
+          type: string
+    PortalLogin:
+      type: object
+      required: [channel, username, password]
+      properties:
+        channel:
+          const: PORTAL
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+    Session:
+      type: object
+      required: [accessToken, expiresAt, user]
+      properties:
+        accessToken:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/User'
+    User:
+      type: object
+      required: [id, displayName, roles]
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        accountIds:
+          description: Accounts the user may operate (kiosk customers)
+          type: array
+          items:
+            type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+    Role:
+      type: string
+      enum: [CUSTOMER, AGENT, SUPERVISOR, ADMIN]
+
+    Money:
+      type: object
+      required: [amount, currency]
+      properties:
+        amount:
+          type: number
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          examples: [MAD]
+    Balance:
+      type: object
+      required: [accountId, available, ledger, asOf]
+      properties:
+        accountId:
+          type: string
+        available:
+          $ref: '#/components/schemas/Money'
+        ledger:
+          $ref: '#/components/schemas/Money'
+        asOf:
+          type: string
+          format: date-time
+
+    DepositRequest:
+      type: object
+      required: [accountId, terminalId, amount]
+      properties:
+        accountId:
+          type: string
+        terminalId:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Money'
+    TransactionType:
+      type: string
+      enum: [DEPOSIT, WITHDRAWAL, TRANSFER, FEE]
+    TransactionStatus:
+      type: string
+      enum: [ACCEPTED, PENDING, REFUSED, REVERSED]
+    TransactionEnvelope:
+      description: |
+        Generic transaction envelope. TO ALIGN with the Epic 1 envelope and the
+        Router contract before the freeze (open question OQ-1).
+      type: object
+      required: [transactionId, correlationId, type, status, amount, accountId, createdAt]
+      properties:
+        transactionId:
+          type: string
+        correlationId:
+          type: string
+          format: uuid
+        type:
+          $ref: '#/components/schemas/TransactionType'
+        status:
+          $ref: '#/components/schemas/TransactionStatus'
+        accountId:
+          type: string
+        terminalId:
+          type: string
+        amount:
+          $ref: '#/components/schemas/Money'
+        createdAt:
+          type: string
+          format: date-time
+        reasonCode:
+          description: Set when status is REFUSED or REVERSED
+          type: string
+    TransactionPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionEnvelope'
+        nextCursor:
+          description: Absent on the last page
+          type: string
+
+    TerminalStatus:
+      type: string
+      enum: [ONLINE, OFFLINE, DEGRADED, MAINTENANCE]
+    TerminalSummary:
+      type: object
+      required: [terminalId, name, status, lastSeenAt]
+      properties:
+        terminalId:
+          type: string
+        name:
+          type: string
+        location:
+          type: string
+        status:
+          $ref: '#/components/schemas/TerminalStatus'
+        lastSeenAt:
+          type: string
+          format: date-time
+    TerminalDetail:
+      allOf:
+        - $ref: '#/components/schemas/TerminalSummary'
+        - type: object
+          required: [services]
+          properties:
+            softwareVersion:
+              type: string
+            services:
+              description: Per-service availability, used by the degraded mode
+              type: array
+              items:
+                $ref: '#/components/schemas/ServiceAvailability'
+    ServiceAvailability:
+      type: object
+      required: [service, available]
+      properties:
+        service:
+          type: string
+          enum: [DEPOSIT, BALANCE, HISTORY, PRINTER, CASH_ACCEPTOR]
+        available:
+          type: boolean
+        reason:
+          type: string
+
+    Error:
+      type: object
+      required: [code, message, correlationId]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable code, e.g. CBS_UNAVAILABLE
+          examples: [CBS_UNAVAILABLE]
+        message:
+          type: string
+          description: Technical message, not shown as-is to the end user
+        correlationId:
+          type: string
+          format: uuid
+        retryable:
+          type: boolean
+        details:
+          type: array
+          items:
+            type: object
+            required: [field, issue]
+            properties:
+              field:
+                type: string
+              issue:
+                type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, invalid or expired credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Authenticated but the role does not allow it
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Refused:
+      description: Business refusal (limit exceeded, account blocked, ...)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServiceUnavailable:
+      description: A downstream system is unavailable (e.g. CBS down)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Timeout:
+      description: A downstream system did not answer in time
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
