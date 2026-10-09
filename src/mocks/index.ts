@@ -1,5 +1,6 @@
 export { handlers } from "./handlers";
-export { resetMockState, users } from "./fixtures";
+export { users } from "./fixtures";
+export { resetMockState } from "./state";
 export {
   getScenario,
   resetScenario,

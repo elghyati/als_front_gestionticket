@@ -64,7 +64,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Make a deposit */
+        /**
+         * Make a deposit on a kiosk
+         * @description Refused with `422` when the DEPOSIT service is not available on the
+         *     kiosk, or when a rule of `DepositSettings` is not met.
+         */
         post: operations["createDeposit"];
         delete?: never;
         options?: never;
@@ -72,15 +76,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/terminals": {
+    "/withdrawals": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List the terminals */
-        get: operations["listTerminals"];
+        get?: never;
+        put?: never;
+        /**
+         * Make a cash withdrawal on a kiosk
+         * @description Refused with `422` when the WITHDRAWAL service is not available on the
+         *     kiosk, when a rule of `WithdrawalSettings` is not met, or when the
+         *     available balance is insufficient. The accepted envelope carries the
+         *     notes to dispense in `cashBreakdown`.
+         */
+        post: operations["createWithdrawal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/kiosks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the kiosks */
+        get: operations["listKiosks"];
+        put?: never;
+        /** Create a kiosk */
+        post: operations["createKiosk"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/kiosks/{kioskId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a kiosk */
+        get: operations["getKiosk"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a kiosk
+         * @description Refused with `409` while the kiosk is `ONLINE` (put it in
+         *     `MAINTENANCE` first). Deletes its devices and service assignments;
+         *     the device status history is kept for audit.
+         */
+        delete: operations["deleteKiosk"];
+        options?: never;
+        head?: never;
+        /** Update a kiosk (partial) */
+        patch: operations["updateKiosk"];
+        trace?: never;
+    };
+    "/kms/kiosks/{kioskId}/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the services assigned to a kiosk, with their computed availability
+         * @description Used by the kiosk app to build its menu and by the degraded mode.
+         */
+        get: operations["listKioskServices"];
         put?: never;
         post?: never;
         delete?: never;
@@ -89,16 +161,270 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/terminals/{terminalId}": {
+    "/kms/kiosks/{kioskId}/services/{serviceCode}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get the detail of a terminal */
-        get: operations["getTerminal"];
+        get?: never;
+        /** Assign a service to a kiosk, or update the assignment */
+        put: operations["assignKioskService"];
+        post?: never;
+        /** Remove a service from a kiosk */
+        delete: operations["unassignKioskService"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/kiosks/{kioskId}/devices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the devices of a kiosk */
+        get: operations["listKioskDevices"];
         put?: never;
+        /**
+         * Install a device on a kiosk
+         * @description Records the initial status in the status history.
+         */
+        post: operations["addKioskDevice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/kiosks/{kioskId}/devices/{deviceId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a device of a kiosk */
+        get: operations["getKioskDevice"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a device from a kiosk
+         * @description The device status history is kept for audit.
+         */
+        delete: operations["removeKioskDevice"];
+        options?: never;
+        head?: never;
+        /** Update a device (partial). The status changes through its own endpoint. */
+        patch: operations["updateKioskDevice"];
+        trace?: never;
+    };
+    "/kms/kiosks/{kioskId}/devices/{deviceId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Change the status of a device
+         * @description Records a `DeviceStatusChange` in the history when the status or the
+         *     reason code changes. Sending the current status and reason again is a
+         *     no-op (no history entry), so the call is safe to retry.
+         */
+        put: operations["changeDeviceStatus"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/kiosks/{kioskId}/devices/{deviceId}/status-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Status history of one device (newest first) */
+        get: operations["listDeviceStatusHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/kiosks/{kioskId}/status-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Status history of all the devices of a kiosk (newest first)
+         * @description Includes devices that were removed since.
+         */
+        get: operations["listKioskStatusHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/device-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Global list of device types (catalogue) */
+        get: operations["listDeviceTypes"];
+        put?: never;
+        /** Add a device type to the catalogue */
+        post: operations["createDeviceType"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/device-types/{deviceTypeCode}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a device type */
+        get: operations["getDeviceType"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a device type from the catalogue
+         * @description Refused with `409` while a kiosk device or a service requirement uses it.
+         */
+        delete: operations["deleteDeviceType"];
+        options?: never;
+        head?: never;
+        /** Update a device type (partial) */
+        patch: operations["updateDeviceType"];
+        trace?: never;
+    };
+    "/kms/services": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the services that can be assigned to kiosks */
+        get: operations["listServices"];
+        put?: never;
+        /** Create a service */
+        post: operations["createService"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/services/{serviceCode}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a service with its device requirements */
+        get: operations["getService"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a service
+         * @description Refused with `409` for a built-in service or while the service is assigned to a kiosk.
+         */
+        delete: operations["deleteService"];
+        options?: never;
+        head?: never;
+        /** Update a service (partial). `enabled = false` disables it on every kiosk. */
+        patch: operations["updateService"];
+        trace?: never;
+    };
+    "/kms/services/{serviceCode}/device-requirements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Device types a service needs, with their requirement level */
+        get: operations["listServiceDeviceRequirements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/services/{serviceCode}/device-requirements/{deviceTypeCode}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Link a device type to a service with a requirement level, or change the level */
+        put: operations["setServiceDeviceRequirement"];
+        post?: never;
+        /** Unlink a device type from a service */
+        delete: operations["removeServiceDeviceRequirement"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/deposit-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the deposit service settings */
+        get: operations["getDepositSettings"];
+        /** Replace the deposit service settings */
+        put: operations["updateDepositSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kms/withdrawal-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get the withdrawal service settings */
+        get: operations["getWithdrawalSettings"];
+        /** Replace the withdrawal service settings */
+        put: operations["updateWithdrawalSettings"];
         post?: never;
         delete?: never;
         options?: never;
@@ -110,6 +436,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description Business identifier chosen at creation, upper case
+         * @example KIOSK-01
+         * @example CASH_ACCEPTOR
+         * @example DEPOSIT
+         */
+        Code: string;
         LoginRequest: components["schemas"]["KioskLogin"] | components["schemas"]["PortalLogin"];
         KioskLogin: {
             /**
@@ -119,7 +452,7 @@ export interface components {
             channel: "KIOSK";
             cardNumber: string;
             pin: string;
-            terminalId: string;
+            kioskId: components["schemas"]["Code"];
         };
         PortalLogin: {
             /**
@@ -158,9 +491,21 @@ export interface components {
             /** Format: date-time */
             asOf: string;
         };
+        /** @description Banknotes counted (deposit) or dispensed (withdrawal) */
+        CashNotes: {
+            denomination: number;
+            count: number;
+        }[];
         DepositRequest: {
             accountId: string;
-            terminalId: string;
+            kioskId: components["schemas"]["Code"];
+            amount: components["schemas"]["Money"];
+            /** @description Notes counted by the cash acceptor; when given, they must add up to `amount` */
+            notes?: components["schemas"]["CashNotes"];
+        };
+        WithdrawalRequest: {
+            accountId: string;
+            kioskId: components["schemas"]["Code"];
             amount: components["schemas"]["Money"];
         };
         /** @enum {string} */
@@ -178,8 +523,10 @@ export interface components {
             type: components["schemas"]["TransactionType"];
             status: components["schemas"]["TransactionStatus"];
             accountId: string;
-            terminalId?: string;
+            kioskId?: components["schemas"]["Code"];
             amount: components["schemas"]["Money"];
+            /** @description Notes counted (deposit) or to dispense (withdrawal) */
+            cashBreakdown?: components["schemas"]["CashNotes"];
             /** Format: date-time */
             createdAt: string;
             /** @description Set when status is REFUSED or REVERSED */
@@ -190,26 +537,253 @@ export interface components {
             /** @description Absent on the last page */
             nextCursor?: string;
         };
-        /** @enum {string} */
-        TerminalStatus: "ONLINE" | "OFFLINE" | "DEGRADED" | "MAINTENANCE";
-        TerminalSummary: {
-            terminalId: string;
+        /**
+         * @description Operational status, set by an administrator or by the kiosk heartbeat
+         * @enum {string}
+         */
+        KioskStatus: "ONLINE" | "OFFLINE" | "MAINTENANCE";
+        /**
+         * @description Computed. `OUT_OF_SERVICE` when the kiosk is not ONLINE or no assigned
+         *     service is available; `DEGRADED` when a service is not fully available
+         *     or a device is not usable; else `HEALTHY`.
+         * @enum {string}
+         */
+        KioskHealth: "HEALTHY" | "DEGRADED" | "OUT_OF_SERVICE";
+        Location: {
+            branchCode?: string;
+            branchName: string;
+            address?: string;
+            city: string;
+        };
+        Kiosk: {
+            kioskId: components["schemas"]["Code"];
             name: string;
-            location?: string;
-            status: components["schemas"]["TerminalStatus"];
-            /** Format: date-time */
-            lastSeenAt: string;
-        };
-        TerminalDetail: components["schemas"]["TerminalSummary"] & {
+            location: components["schemas"]["Location"];
+            /** Format: ipv4 */
+            ipAddress?: string;
             softwareVersion?: string;
-            /** @description Per-service availability, used by the degraded mode */
-            services: components["schemas"]["ServiceAvailability"][];
+            status: components["schemas"]["KioskStatus"];
+            health: components["schemas"]["KioskHealth"];
+            deviceCount: number;
+            /** Format: date-time */
+            lastSeenAt?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         };
-        ServiceAvailability: {
+        KioskCreate: {
+            kioskId: components["schemas"]["Code"];
+            name: string;
+            location: components["schemas"]["Location"];
+            /** Format: ipv4 */
+            ipAddress?: string;
+            softwareVersion?: string;
+            /** @description Defaults to MAINTENANCE until the kiosk is configured */
+            status?: components["schemas"]["KioskStatus"];
+        };
+        KioskUpdate: {
+            name?: string;
+            location?: components["schemas"]["Location"];
+            /** Format: ipv4 */
+            ipAddress?: string;
+            softwareVersion?: string;
+            status?: components["schemas"]["KioskStatus"];
+        };
+        KioskServiceAssignment: {
+            /** @description Switch the service on or off on this kiosk only */
+            enabled: boolean;
+        };
+        /** @enum {string} */
+        ServiceAvailabilityStatus: "AVAILABLE" | "DEGRADED" | "UNAVAILABLE";
+        AvailabilityIssue: {
             /** @enum {string} */
-            service: "DEPOSIT" | "BALANCE" | "HISTORY" | "PRINTER" | "CASH_ACCEPTOR";
-            available: boolean;
+            reasonCode: "SERVICE_DISABLED" | "SERVICE_DISABLED_ON_KIOSK" | "KIOSK_NOT_ONLINE" | "DEVICE_MISSING" | "DEVICE_NOT_USABLE";
+            message: string;
+            deviceTypeCode?: components["schemas"]["Code"];
+            requirement?: components["schemas"]["RequirementLevel"];
+        };
+        KioskService: {
+            serviceCode: components["schemas"]["Code"];
+            name: string;
+            /** @description Assignment switch on this kiosk */
+            enabled: boolean;
+            availability: components["schemas"]["ServiceAvailabilityStatus"];
+            /** @description Why the service is not fully available; empty when everything is fine */
+            issues: components["schemas"]["AvailabilityIssue"][];
+            /** Format: date-time */
+            assignedAt: string;
+        };
+        /**
+         * @description `OPERATIONAL` and `WARNING` (e.g. paper low) are usable; `ERROR`,
+         *     `OFFLINE` (not responding), `MAINTENANCE` and `DISABLED` are not.
+         * @enum {string}
+         */
+        DeviceStatus: "OPERATIONAL" | "WARNING" | "ERROR" | "OFFLINE" | "MAINTENANCE" | "DISABLED";
+        /** @enum {string} */
+        StatusChangeSource: "DEVICE" | "OPERATOR" | "SYSTEM";
+        KioskDevice: {
+            deviceId: string;
+            kioskId: components["schemas"]["Code"];
+            deviceTypeCode: components["schemas"]["Code"];
+            serialNumber: string;
+            manufacturer?: string;
+            model?: string;
+            firmwareVersion?: string;
+            status: components["schemas"]["DeviceStatus"];
+            /**
+             * @example PAPER_LOW
+             * @example JAM
+             * @example NOT_RESPONDING
+             */
+            statusReasonCode?: string;
+            statusReason?: string;
+            /** Format: date-time */
+            statusChangedAt: string;
+            /** Format: date-time */
+            installedAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        KioskDeviceCreate: {
+            deviceTypeCode: components["schemas"]["Code"];
+            serialNumber: string;
+            manufacturer?: string;
+            model?: string;
+            firmwareVersion?: string;
+            /** @description Initial status, defaults to OPERATIONAL */
+            status?: components["schemas"]["DeviceStatus"];
+        };
+        KioskDeviceUpdate: {
+            serialNumber?: string;
+            manufacturer?: string;
+            model?: string;
+            firmwareVersion?: string;
+        };
+        DeviceStatusChangeRequest: {
+            status: components["schemas"]["DeviceStatus"];
+            /**
+             * @example PAPER_LOW
+             * @example JAM
+             * @example NOT_RESPONDING
+             */
+            reasonCode?: string;
             reason?: string;
+            /** @description Defaults to OPERATOR */
+            source?: components["schemas"]["StatusChangeSource"];
+        };
+        /** @description One entry of the device status history */
+        DeviceStatusChange: {
+            changeId: string;
+            kioskId: components["schemas"]["Code"];
+            deviceId: string;
+            deviceTypeCode: components["schemas"]["Code"];
+            /** @description Absent for the initial status */
+            previousStatus?: components["schemas"]["DeviceStatus"];
+            newStatus: components["schemas"]["DeviceStatus"];
+            reasonCode?: string;
+            reason?: string;
+            source: components["schemas"]["StatusChangeSource"];
+            /** @description User id when the source is OPERATOR */
+            changedBy?: string;
+            /** Format: date-time */
+            changedAt: string;
+            /** Format: uuid */
+            correlationId: string;
+        };
+        DeviceStatusHistoryPage: {
+            items: components["schemas"]["DeviceStatusChange"][];
+            /** @description Absent on the last page */
+            nextCursor?: string;
+        };
+        /** @enum {string} */
+        DeviceCategory: "CASH" | "CARD" | "PRINTER" | "INPUT" | "DISPLAY" | "SENSOR" | "OTHER";
+        DeviceType: {
+            deviceTypeCode: components["schemas"]["Code"];
+            name: string;
+            category: components["schemas"]["DeviceCategory"];
+            description?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        DeviceTypeCreate: {
+            deviceTypeCode: components["schemas"]["Code"];
+            name: string;
+            category: components["schemas"]["DeviceCategory"];
+            description?: string;
+        };
+        DeviceTypeUpdate: {
+            name?: string;
+            category?: components["schemas"]["DeviceCategory"];
+            description?: string;
+        };
+        /**
+         * @description How much a service needs a device type:
+         *     `MANDATORY` – service unavailable without it;
+         *     `RECOMMENDED` – service degraded without it;
+         *     `OPTIONAL` – service available without it (feature reduced, e.g. no receipt).
+         * @enum {string}
+         */
+        RequirementLevel: "MANDATORY" | "RECOMMENDED" | "OPTIONAL";
+        ServiceDeviceRequirement: {
+            deviceTypeCode: components["schemas"]["Code"];
+            requirement: components["schemas"]["RequirementLevel"];
+        };
+        Service: {
+            serviceCode: components["schemas"]["Code"];
+            name: string;
+            description?: string;
+            /** @description Global switch; when false the service is unavailable on every kiosk */
+            enabled: boolean;
+            /** @description Built-in services (DEPOSIT, WITHDRAWAL, BALANCE, HISTORY) cannot be deleted */
+            builtIn: boolean;
+            deviceRequirements: components["schemas"]["ServiceDeviceRequirement"][];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ServiceCreate: {
+            serviceCode: components["schemas"]["Code"];
+            name: string;
+            description?: string;
+            /** @description Defaults to true */
+            enabled?: boolean;
+        };
+        ServiceUpdate: {
+            name?: string;
+            description?: string;
+            enabled?: boolean;
+        };
+        /** @enum {string} */
+        ReceiptMode: "ALWAYS" | "ON_REQUEST" | "NEVER";
+        /** @description Rules of the DEPOSIT service. `minAmount <= maxAmountPerTransaction <= dailyLimitPerAccount`. */
+        DepositSettings: {
+            currency: string;
+            minAmount: number;
+            maxAmountPerTransaction: number;
+            dailyLimitPerAccount: number;
+            /** @description Notes the cash acceptor takes */
+            acceptedDenominations: number[];
+            maxNotesPerTransaction: number;
+            receiptMode: components["schemas"]["ReceiptMode"];
+        };
+        /** @description Rules of the WITHDRAWAL service. `minAmount <= maxAmountPerTransaction <= dailyLimitPerAccount`. */
+        WithdrawalSettings: {
+            currency: string;
+            minAmount: number;
+            maxAmountPerTransaction: number;
+            dailyLimitPerAccount: number;
+            /** @description Every amount must be a multiple of this value (smallest dispensable note) */
+            amountMultipleOf: number;
+            /** @description Notes loaded in the cash dispenser */
+            dispensableDenominations: number[];
+            maxNotesPerTransaction: number;
+            /** @description Quick-pick amounts shown on the kiosk */
+            presetAmounts: number[];
+            receiptMode: components["schemas"]["ReceiptMode"];
         };
         Error: {
             /**
@@ -265,7 +839,16 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Business refusal (limit exceeded, account blocked, ...) */
+        /** @description Duplicate code, or blocked by a dependency (in use, built-in, kiosk online) */
+        Conflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Business refusal (limit, insufficient funds, service unavailable on the kiosk, ...) */
         Refused: {
             headers: {
                 [name: string]: unknown;
@@ -274,7 +857,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description A downstream system is unavailable (e.g. CBS down) */
+        /** @description A downstream system is unavailable (CBS for banking calls, KMS for /kms calls) */
         ServiceUnavailable: {
             headers: {
                 [name: string]: unknown;
@@ -296,7 +879,20 @@ export interface components {
     parameters: {
         /** @description Generated by the front-end per user action, propagated end to end */
         CorrelationId: string;
+        /** @description Unique per operation attempt; a retry with the same key must not execute twice */
+        IdempotencyKey: string;
         AccountId: string;
+        KioskId: components["schemas"]["Code"];
+        DeviceId: string;
+        ServiceCode: components["schemas"]["Code"];
+        DeviceTypeCode: components["schemas"]["Code"];
+        Limit: number;
+        /** @description Opaque cursor returned as `nextCursor` by the previous page */
+        Cursor: string;
+        /** @description Inclusive lower bound on the change date */
+        From: string;
+        /** @description Exclusive upper bound on the change date */
+        To: string;
     };
     requestBodies: never;
     headers: {
@@ -373,9 +969,9 @@ export interface operations {
     listTransactions: {
         parameters: {
             query?: {
-                limit?: number;
+                limit?: components["parameters"]["Limit"];
                 /** @description Opaque cursor returned as `nextCursor` by the previous page */
-                cursor?: string;
+                cursor?: components["parameters"]["Cursor"];
             };
             header: {
                 /** @description Generated by the front-end per user action, propagated end to end */
@@ -411,8 +1007,8 @@ export interface operations {
             header: {
                 /** @description Generated by the front-end per user action, propagated end to end */
                 "X-Correlation-Id": components["parameters"]["CorrelationId"];
-                /** @description Unique per deposit attempt; a retry with the same key must not deposit twice */
-                "Idempotency-Key": string;
+                /** @description Unique per operation attempt; a retry with the same key must not execute twice */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
             };
             path?: never;
             cookie?: never;
@@ -440,10 +1036,49 @@ export interface operations {
             504: components["responses"]["Timeout"];
         };
     };
-    listTerminals: {
+    createWithdrawal: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+                /** @description Unique per operation attempt; a retry with the same key must not execute twice */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawalRequest"];
+            };
+        };
+        responses: {
+            /** @description Withdrawal accepted */
+            201: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionEnvelope"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Refused"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listKiosks: {
         parameters: {
             query?: {
-                status?: components["schemas"]["TerminalStatus"];
+                status?: components["schemas"]["KioskStatus"];
+                health?: components["schemas"]["KioskHealth"];
+                city?: string;
+                /** @description Case-insensitive search in id and name */
+                q?: string;
             };
             header: {
                 /** @description Generated by the front-end per user action, propagated end to end */
@@ -454,7 +1089,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Terminals */
+            /** @description Kiosks */
             200: {
                 headers: {
                     "X-Correlation-Id": components["headers"]["CorrelationId"];
@@ -462,7 +1097,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        items: components["schemas"]["TerminalSummary"][];
+                        items: components["schemas"]["Kiosk"][];
                     };
                 };
             };
@@ -473,7 +1108,41 @@ export interface operations {
             504: components["responses"]["Timeout"];
         };
     };
-    getTerminal: {
+    createKiosk: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KioskCreate"];
+            };
+        };
+        responses: {
+            /** @description Kiosk created */
+            201: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kiosk"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    getKiosk: {
         parameters: {
             query?: never;
             header: {
@@ -481,26 +1150,1040 @@ export interface operations {
                 "X-Correlation-Id": components["parameters"]["CorrelationId"];
             };
             path: {
-                terminalId: string;
+                kioskId: components["parameters"]["KioskId"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Terminal detail */
+            /** @description Kiosk */
             200: {
                 headers: {
                     "X-Correlation-Id": components["headers"]["CorrelationId"];
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TerminalDetail"];
+                    "application/json": components["schemas"]["Kiosk"];
                 };
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    deleteKiosk: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Kiosk deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    updateKiosk: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KioskUpdate"];
+            };
+        };
+        responses: {
+            /** @description Kiosk updated */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Kiosk"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listKioskServices: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assigned services */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["KioskService"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    assignKioskService: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+                serviceCode: components["parameters"]["ServiceCode"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KioskServiceAssignment"];
+            };
+        };
+        responses: {
+            /** @description Service assigned */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KioskService"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    unassignKioskService: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+                serviceCode: components["parameters"]["ServiceCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service removed from the kiosk */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listKioskDevices: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["DeviceStatus"];
+            };
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Devices */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["KioskDevice"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    addKioskDevice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KioskDeviceCreate"];
+            };
+        };
+        responses: {
+            /** @description Device installed */
+            201: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KioskDevice"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    getKioskDevice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+                deviceId: components["parameters"]["DeviceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Device */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KioskDevice"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    removeKioskDevice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+                deviceId: components["parameters"]["DeviceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Device removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    updateKioskDevice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+                deviceId: components["parameters"]["DeviceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KioskDeviceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Device updated */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KioskDevice"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    changeDeviceStatus: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+                deviceId: components["parameters"]["DeviceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceStatusChangeRequest"];
+            };
+        };
+        responses: {
+            /** @description Device with its new status */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KioskDevice"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listDeviceStatusHistory: {
+        parameters: {
+            query?: {
+                /** @description Inclusive lower bound on the change date */
+                from?: components["parameters"]["From"];
+                /** @description Exclusive upper bound on the change date */
+                to?: components["parameters"]["To"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `nextCursor` by the previous page */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+                deviceId: components["parameters"]["DeviceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of history */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceStatusHistoryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listKioskStatusHistory: {
+        parameters: {
+            query?: {
+                deviceTypeCode?: string;
+                /** @description Only changes to this status */
+                status?: components["schemas"]["DeviceStatus"];
+                /** @description Inclusive lower bound on the change date */
+                from?: components["parameters"]["From"];
+                /** @description Exclusive upper bound on the change date */
+                to?: components["parameters"]["To"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `nextCursor` by the previous page */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                kioskId: components["parameters"]["KioskId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of history */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceStatusHistoryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listDeviceTypes: {
+        parameters: {
+            query?: {
+                category?: components["schemas"]["DeviceCategory"];
+            };
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Device types */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DeviceType"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    createDeviceType: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTypeCreate"];
+            };
+        };
+        responses: {
+            /** @description Device type created */
+            201: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceType"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    getDeviceType: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                deviceTypeCode: components["parameters"]["DeviceTypeCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Device type */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceType"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    deleteDeviceType: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                deviceTypeCode: components["parameters"]["DeviceTypeCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Device type deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    updateDeviceType: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                deviceTypeCode: components["parameters"]["DeviceTypeCode"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeviceTypeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Device type updated */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceType"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listServices: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Services */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Service"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    createService: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceCreate"];
+            };
+        };
+        responses: {
+            /** @description Service created */
+            201: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Service"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    getService: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                serviceCode: components["parameters"]["ServiceCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Service"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    deleteService: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                serviceCode: components["parameters"]["ServiceCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Service deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    updateService: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                serviceCode: components["parameters"]["ServiceCode"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServiceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Service updated */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Service"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listServiceDeviceRequirements: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                serviceCode: components["parameters"]["ServiceCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Requirements */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ServiceDeviceRequirement"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    setServiceDeviceRequirement: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                serviceCode: components["parameters"]["ServiceCode"];
+                deviceTypeCode: components["parameters"]["DeviceTypeCode"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    requirement: components["schemas"]["RequirementLevel"];
+                };
+            };
+        };
+        responses: {
+            /** @description Requirement saved */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ServiceDeviceRequirement"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    removeServiceDeviceRequirement: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                serviceCode: components["parameters"]["ServiceCode"];
+                deviceTypeCode: components["parameters"]["DeviceTypeCode"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Requirement removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    getDepositSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deposit settings */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    updateDepositSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepositSettings"];
+            };
+        };
+        responses: {
+            /** @description Deposit settings saved */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepositSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    getWithdrawalSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Withdrawal settings */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawalSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    updateWithdrawalSettings: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawalSettings"];
+            };
+        };
+        responses: {
+            /** @description Withdrawal settings saved */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WithdrawalSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             503: components["responses"]["ServiceUnavailable"];
             504: components["responses"]["Timeout"];
         };

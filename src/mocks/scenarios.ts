@@ -2,15 +2,16 @@
  * Scenario switches for the mock API.
  *
  * - `ok`           every call succeeds
- * - `cbsDown`      the core banking system is down → 503 CBS_UNAVAILABLE
+ * - `cbsDown`      the core banking system is down → 503 CBS_UNAVAILABLE on banking calls
+ * - `kmsDown`      the KMS is down → 503 KMS_UNAVAILABLE on /kms calls
  * - `timeout`      a downstream system does not answer → 504 after `timeoutDelayMs`
- * - `refused`      business refusal (deposit 422, wrong PIN 401, missing role 403)
+ * - `refused`      business refusal (deposit/withdrawal 422, wrong PIN 401, role-protected call 403)
  * - `unauthorized` the session is rejected → 401 on every authenticated call
  *
  * The active scenario is global; a single request can override it with the
  * `X-Mock-Scenario` header.
  */
-export const SCENARIOS = ["ok", "cbsDown", "timeout", "refused", "unauthorized"] as const;
+export const SCENARIOS = ["ok", "cbsDown", "kmsDown", "timeout", "refused", "unauthorized"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
 export const SCENARIO_HEADER = "X-Mock-Scenario";

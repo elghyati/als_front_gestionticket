@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll } from "vitest";
-import { resetMockState } from "../src/mocks/fixtures";
+import { resetMockState } from "../src/mocks/state";
 import { server } from "../src/mocks/node";
 import { resetScenario, setTimeoutDelay } from "../src/mocks/scenarios";
 

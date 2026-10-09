@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ALS Front – MVP API contract
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Contract between the MVP front-end (kiosk and portal) and the back-end
     services (Agent, KMS-Supervision, KMS-Routeur), which are not ready yet.
@@ -15,6 +15,27 @@ info:
       and every error echoes it.
     - Every error uses the `Error` schema.
     - Amounts are decimal numbers in the account currency (ISO 4217 code).
+    - Lists are returned as `{ items }`; long lists are paginated with an
+      opaque `cursor` / `nextCursor`.
+    - Create returns `201`, partial update is `PATCH`, delete returns `204`.
+      A duplicate code or a delete blocked by a dependency returns `409`.
+
+    KMS (Kiosk Management System) access by role:
+
+    | Operations | Roles |
+    |---|---|
+    | Read kiosks, devices, history, catalogue, services | AGENT, SUPERVISOR, ADMIN |
+    | Change a device status | SUPERVISOR, ADMIN |
+    | Create / update / delete, assignments, requirements, settings | ADMIN |
+    | Read the services of a kiosk, read deposit and withdrawal settings | any authenticated user (the kiosk app needs them) |
+
+    Service availability on a kiosk (computed, see `KioskService`):
+    a device is *usable* when its status is `OPERATIONAL` or `WARNING`.
+    For each device type the service requires, if the kiosk has no usable
+    device of that type:
+    - `MANDATORY` → the service is `UNAVAILABLE`
+    - `RECOMMENDED` → the service is `DEGRADED` (works, with reduced features)
+    - `OPTIONAL` → the service stays `AVAILABLE`; the issue is still reported
   license:
     name: Proprietary
     identifier: LicenseRef-Proprietary
@@ -32,11 +53,16 @@ tags:
   - name: accounts
     description: Balance and history
   - name: transactions
-    description: Deposits
-  - name: terminals
-    description: Terminal list and detail (portal, KMS-Supervision)
+    description: Deposit and withdrawal operations
+  - name: kms-kiosks
+    description: Kiosks (CRUD) and the services assigned to them
+  - name: kms-devices
+    description: Devices of a kiosk, their status and status history
+  - name: kms-settings
+    description: Configuration – device catalogue, services, service/device requirements, deposit and withdrawal settings
 
 paths:
+  # ───────────────────────────── auth ─────────────────────────────
   /auth/login:
     post:
       tags: [auth]
@@ -70,6 +96,7 @@ paths:
         '504':
           $ref: '#/components/responses/Timeout'
 
+  # ─────────────────────────── accounts ───────────────────────────
   /accounts/{accountId}/balance:
     get:
       tags: [accounts]
@@ -107,20 +134,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/AccountId'
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 100
-            default: 20
-        - name: cursor
-          in: query
-          required: false
-          description: Opaque cursor returned as `nextCursor` by the previous page
-          schema:
-            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
       responses:
         '200':
           description: One page of history
@@ -142,20 +157,18 @@ paths:
         '504':
           $ref: '#/components/responses/Timeout'
 
+  # ───────────────────────── transactions ─────────────────────────
   /deposits:
     post:
       tags: [transactions]
       operationId: createDeposit
-      summary: Make a deposit
+      summary: Make a deposit on a kiosk
+      description: |
+        Refused with `422` when the DEPOSIT service is not available on the
+        kiosk, or when a rule of `DepositSettings` is not met.
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
-        - name: Idempotency-Key
-          in: header
-          required: true
-          description: Unique per deposit attempt; a retry with the same key must not deposit twice
-          schema:
-            type: string
-            format: uuid
+        - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
         required: true
         content:
@@ -183,21 +196,78 @@ paths:
         '504':
           $ref: '#/components/responses/Timeout'
 
-  /terminals:
+  /withdrawals:
+    post:
+      tags: [transactions]
+      operationId: createWithdrawal
+      summary: Make a cash withdrawal on a kiosk
+      description: |
+        Refused with `422` when the WITHDRAWAL service is not available on the
+        kiosk, when a rule of `WithdrawalSettings` is not met, or when the
+        available balance is insufficient. The accepted envelope carries the
+        notes to dispense in `cashBreakdown`.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawalRequest'
+      responses:
+        '201':
+          description: Withdrawal accepted
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  # ────────────────────────── KMS: kiosks ─────────────────────────
+  /kms/kiosks:
     get:
-      tags: [terminals]
-      operationId: listTerminals
-      summary: List the terminals
+      tags: [kms-kiosks]
+      operationId: listKiosks
+      summary: List the kiosks
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - name: status
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/TerminalStatus'
+            $ref: '#/components/schemas/KioskStatus'
+        - name: health
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/KioskHealth'
+        - name: city
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive search in id and name
+          schema:
+            type: string
       responses:
         '200':
-          description: Terminals
+          description: Kiosks
           headers:
             X-Correlation-Id:
               $ref: '#/components/headers/CorrelationId'
@@ -210,7 +280,1019 @@ paths:
                   items:
                     type: array
                     items:
-                      $ref: '#/components/schemas/TerminalSummary'
+                      $ref: '#/components/schemas/Kiosk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    post:
+      tags: [kms-kiosks]
+      operationId: createKiosk
+      summary: Create a kiosk
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskCreate'
+      responses:
+        '201':
+          description: Kiosk created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Kiosk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/kiosks/{kioskId}:
+    get:
+      tags: [kms-kiosks]
+      operationId: getKiosk
+      summary: Get a kiosk
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+      responses:
+        '200':
+          description: Kiosk
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Kiosk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    patch:
+      tags: [kms-kiosks]
+      operationId: updateKiosk
+      summary: Update a kiosk (partial)
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskUpdate'
+      responses:
+        '200':
+          description: Kiosk updated
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Kiosk'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    delete:
+      tags: [kms-kiosks]
+      operationId: deleteKiosk
+      summary: Delete a kiosk
+      description: |
+        Refused with `409` while the kiosk is `ONLINE` (put it in
+        `MAINTENANCE` first). Deletes its devices and service assignments;
+        the device status history is kept for audit.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+      responses:
+        '204':
+          description: Kiosk deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/kiosks/{kioskId}/services:
+    get:
+      tags: [kms-kiosks]
+      operationId: listKioskServices
+      summary: List the services assigned to a kiosk, with their computed availability
+      description: Used by the kiosk app to build its menu and by the degraded mode.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+      responses:
+        '200':
+          description: Assigned services
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KioskService'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/kiosks/{kioskId}/services/{serviceCode}:
+    put:
+      tags: [kms-kiosks]
+      operationId: assignKioskService
+      summary: Assign a service to a kiosk, or update the assignment
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - $ref: '#/components/parameters/ServiceCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskServiceAssignment'
+      responses:
+        '200':
+          description: Service assigned
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskService'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    delete:
+      tags: [kms-kiosks]
+      operationId: unassignKioskService
+      summary: Remove a service from a kiosk
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - $ref: '#/components/parameters/ServiceCode'
+      responses:
+        '204':
+          description: Service removed from the kiosk
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  # ────────────────────────── KMS: devices ────────────────────────
+  /kms/kiosks/{kioskId}/devices:
+    get:
+      tags: [kms-devices]
+      operationId: listKioskDevices
+      summary: List the devices of a kiosk
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/DeviceStatus'
+      responses:
+        '200':
+          description: Devices
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KioskDevice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    post:
+      tags: [kms-devices]
+      operationId: addKioskDevice
+      summary: Install a device on a kiosk
+      description: Records the initial status in the status history.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskDeviceCreate'
+      responses:
+        '201':
+          description: Device installed
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskDevice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/kiosks/{kioskId}/devices/{deviceId}:
+    get:
+      tags: [kms-devices]
+      operationId: getKioskDevice
+      summary: Get a device of a kiosk
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Device
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskDevice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    patch:
+      tags: [kms-devices]
+      operationId: updateKioskDevice
+      summary: Update a device (partial). The status changes through its own endpoint.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/KioskDeviceUpdate'
+      responses:
+        '200':
+          description: Device updated
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskDevice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    delete:
+      tags: [kms-devices]
+      operationId: removeKioskDevice
+      summary: Remove a device from a kiosk
+      description: The device status history is kept for audit.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '204':
+          description: Device removed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/kiosks/{kioskId}/devices/{deviceId}/status:
+    put:
+      tags: [kms-devices]
+      operationId: changeDeviceStatus
+      summary: Change the status of a device
+      description: |
+        Records a `DeviceStatusChange` in the history when the status or the
+        reason code changes. Sending the current status and reason again is a
+        no-op (no history entry), so the call is safe to retry.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceStatusChangeRequest'
+      responses:
+        '200':
+          description: Device with its new status
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KioskDevice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/kiosks/{kioskId}/devices/{deviceId}/status-history:
+    get:
+      tags: [kms-devices]
+      operationId: listDeviceStatusHistory
+      summary: Status history of one device (newest first)
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - $ref: '#/components/parameters/DeviceId'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of history
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatusHistoryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/kiosks/{kioskId}/status-history:
+    get:
+      tags: [kms-devices]
+      operationId: listKioskStatusHistory
+      summary: Status history of all the devices of a kiosk (newest first)
+      description: Includes devices that were removed since.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/KioskId'
+        - name: deviceTypeCode
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Only changes to this status
+          schema:
+            $ref: '#/components/schemas/DeviceStatus'
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of history
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatusHistoryPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  # ───────────────── KMS settings: device catalogue ───────────────
+  /kms/device-types:
+    get:
+      tags: [kms-settings]
+      operationId: listDeviceTypes
+      summary: Global list of device types (catalogue)
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: category
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/DeviceCategory'
+      responses:
+        '200':
+          description: Device types
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeviceType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    post:
+      tags: [kms-settings]
+      operationId: createDeviceType
+      summary: Add a device type to the catalogue
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceTypeCreate'
+      responses:
+        '201':
+          description: Device type created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/device-types/{deviceTypeCode}:
+    get:
+      tags: [kms-settings]
+      operationId: getDeviceType
+      summary: Get a device type
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/DeviceTypeCode'
+      responses:
+        '200':
+          description: Device type
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    patch:
+      tags: [kms-settings]
+      operationId: updateDeviceType
+      summary: Update a device type (partial)
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/DeviceTypeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceTypeUpdate'
+      responses:
+        '200':
+          description: Device type updated
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    delete:
+      tags: [kms-settings]
+      operationId: deleteDeviceType
+      summary: Remove a device type from the catalogue
+      description: Refused with `409` while a kiosk device or a service requirement uses it.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/DeviceTypeCode'
+      responses:
+        '204':
+          description: Device type deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  # ─────────────────────── KMS settings: services ─────────────────
+  /kms/services:
+    get:
+      tags: [kms-settings]
+      operationId: listServices
+      summary: List the services that can be assigned to kiosks
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Services
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    post:
+      tags: [kms-settings]
+      operationId: createService
+      summary: Create a service
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceCreate'
+      responses:
+        '201':
+          description: Service created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/services/{serviceCode}:
+    get:
+      tags: [kms-settings]
+      operationId: getService
+      summary: Get a service with its device requirements
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ServiceCode'
+      responses:
+        '200':
+          description: Service
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    patch:
+      tags: [kms-settings]
+      operationId: updateService
+      summary: Update a service (partial). `enabled = false` disables it on every kiosk.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ServiceCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceUpdate'
+      responses:
+        '200':
+          description: Service updated
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    delete:
+      tags: [kms-settings]
+      operationId: deleteService
+      summary: Delete a service
+      description: Refused with `409` for a built-in service or while the service is assigned to a kiosk.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ServiceCode'
+      responses:
+        '204':
+          description: Service deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/services/{serviceCode}/device-requirements:
+    get:
+      tags: [kms-settings]
+      operationId: listServiceDeviceRequirements
+      summary: Device types a service needs, with their requirement level
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ServiceCode'
+      responses:
+        '200':
+          description: Requirements
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceDeviceRequirement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /kms/services/{serviceCode}/device-requirements/{deviceTypeCode}:
+    put:
+      tags: [kms-settings]
+      operationId: setServiceDeviceRequirement
+      summary: Link a device type to a service with a requirement level, or change the level
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ServiceCode'
+        - $ref: '#/components/parameters/DeviceTypeCode'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requirement]
+              additionalProperties: false
+              properties:
+                requirement:
+                  $ref: '#/components/schemas/RequirementLevel'
+      responses:
+        '200':
+          description: Requirement saved
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceDeviceRequirement'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    delete:
+      tags: [kms-settings]
+      operationId: removeServiceDeviceRequirement
+      summary: Unlink a device type from a service
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ServiceCode'
+        - $ref: '#/components/parameters/DeviceTypeCode'
+      responses:
+        '204':
+          description: Requirement removed
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  # ──────────────── KMS settings: deposit and withdrawal ──────────
+  /kms/deposit-settings:
+    get:
+      tags: [kms-settings]
+      operationId: getDepositSettings
+      summary: Get the deposit service settings
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      responses:
+        '200':
+          description: Deposit settings
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepositSettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    put:
+      tags: [kms-settings]
+      operationId: updateDepositSettings
+      summary: Replace the deposit service settings
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepositSettings'
+      responses:
+        '200':
+          description: Deposit settings saved
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepositSettings'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -222,36 +1304,59 @@ paths:
         '504':
           $ref: '#/components/responses/Timeout'
 
-  /terminals/{terminalId}:
+  /kms/withdrawal-settings:
     get:
-      tags: [terminals]
-      operationId: getTerminal
-      summary: Get the detail of a terminal
+      tags: [kms-settings]
+      operationId: getWithdrawalSettings
+      summary: Get the withdrawal service settings
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
-        - name: terminalId
-          in: path
-          required: true
-          schema:
-            type: string
       responses:
         '200':
-          description: Terminal detail
+          description: Withdrawal settings
           headers:
             X-Correlation-Id:
               $ref: '#/components/headers/CorrelationId'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TerminalDetail'
+                $ref: '#/components/schemas/WithdrawalSettings'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    put:
+      tags: [kms-settings]
+      operationId: updateWithdrawalSettings
+      summary: Replace the withdrawal service settings
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawalSettings'
+      responses:
+        '200':
+          description: Withdrawal settings saved
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WithdrawalSettings'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
         '504':
@@ -272,12 +1377,76 @@ components:
       schema:
         type: string
         format: uuid
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Unique per operation attempt; a retry with the same key must not execute twice
+      schema:
+        type: string
+        format: uuid
     AccountId:
       name: accountId
       in: path
       required: true
       schema:
         type: string
+    KioskId:
+      name: kioskId
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Code'
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      schema:
+        type: string
+    ServiceCode:
+      name: serviceCode
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Code'
+    DeviceTypeCode:
+      name: deviceTypeCode
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Code'
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque cursor returned as `nextCursor` by the previous page
+      schema:
+        type: string
+    From:
+      name: from
+      in: query
+      required: false
+      description: Inclusive lower bound on the change date
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      required: false
+      description: Exclusive upper bound on the change date
+      schema:
+        type: string
+        format: date-time
 
   headers:
     CorrelationId:
@@ -287,6 +1456,13 @@ components:
         format: uuid
 
   schemas:
+    Code:
+      description: Business identifier chosen at creation, upper case
+      type: string
+      pattern: '^[A-Z0-9][A-Z0-9_-]{1,31}$'
+      examples: [KIOSK-01, CASH_ACCEPTOR, DEPOSIT]
+
+    # ─────────────── auth ───────────────
     LoginRequest:
       oneOf:
         - $ref: '#/components/schemas/KioskLogin'
@@ -298,7 +1474,7 @@ components:
           PORTAL: '#/components/schemas/PortalLogin'
     KioskLogin:
       type: object
-      required: [channel, cardNumber, pin, terminalId]
+      required: [channel, cardNumber, pin, kioskId]
       properties:
         channel:
           const: KIOSK
@@ -307,8 +1483,8 @@ components:
         pin:
           type: string
           pattern: '^[0-9]{4,6}$'
-        terminalId:
-          type: string
+        kioskId:
+          $ref: '#/components/schemas/Code'
     PortalLogin:
       type: object
       required: [channel, username, password]
@@ -352,6 +1528,7 @@ components:
       type: string
       enum: [CUSTOMER, AGENT, SUPERVISOR, ADMIN]
 
+    # ─────────────── money and transactions ───────────────
     Money:
       type: object
       required: [amount, currency]
@@ -375,15 +1552,41 @@ components:
         asOf:
           type: string
           format: date-time
-
+    CashNotes:
+      description: Banknotes counted (deposit) or dispensed (withdrawal)
+      type: array
+      items:
+        type: object
+        required: [denomination, count]
+        properties:
+          denomination:
+            type: integer
+            minimum: 1
+          count:
+            type: integer
+            minimum: 1
     DepositRequest:
       type: object
-      required: [accountId, terminalId, amount]
+      required: [accountId, kioskId, amount]
       properties:
         accountId:
           type: string
-        terminalId:
+        kioskId:
+          $ref: '#/components/schemas/Code'
+        amount:
+          $ref: '#/components/schemas/Money'
+        notes:
+          description: Notes counted by the cash acceptor; when given, they must add up to `amount`
+          allOf:
+            - $ref: '#/components/schemas/CashNotes'
+    WithdrawalRequest:
+      type: object
+      required: [accountId, kioskId, amount]
+      properties:
+        accountId:
           type: string
+        kioskId:
+          $ref: '#/components/schemas/Code'
         amount:
           $ref: '#/components/schemas/Money'
     TransactionType:
@@ -410,10 +1613,14 @@ components:
           $ref: '#/components/schemas/TransactionStatus'
         accountId:
           type: string
-        terminalId:
-          type: string
+        kioskId:
+          $ref: '#/components/schemas/Code'
         amount:
           $ref: '#/components/schemas/Money'
+        cashBreakdown:
+          description: Notes counted (deposit) or to dispense (withdrawal)
+          allOf:
+            - $ref: '#/components/schemas/CashNotes'
         createdAt:
           type: string
           format: date-time
@@ -432,49 +1639,486 @@ components:
           description: Absent on the last page
           type: string
 
-    TerminalStatus:
+    # ─────────────── KMS: kiosks ───────────────
+    KioskStatus:
+      description: Operational status, set by an administrator or by the kiosk heartbeat
       type: string
-      enum: [ONLINE, OFFLINE, DEGRADED, MAINTENANCE]
-    TerminalSummary:
+      enum: [ONLINE, OFFLINE, MAINTENANCE]
+    KioskHealth:
+      description: |
+        Computed. `OUT_OF_SERVICE` when the kiosk is not ONLINE or no assigned
+        service is available; `DEGRADED` when a service is not fully available
+        or a device is not usable; else `HEALTHY`.
+      type: string
+      enum: [HEALTHY, DEGRADED, OUT_OF_SERVICE]
+    Location:
       type: object
-      required: [terminalId, name, status, lastSeenAt]
+      required: [branchName, city]
       properties:
-        terminalId:
+        branchCode:
           type: string
+        branchName:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+    Kiosk:
+      type: object
+      required: [kioskId, name, location, status, health, deviceCount, createdAt, updatedAt]
+      properties:
+        kioskId:
+          $ref: '#/components/schemas/Code'
         name:
           type: string
         location:
+          $ref: '#/components/schemas/Location'
+        ipAddress:
+          type: string
+          format: ipv4
+        softwareVersion:
           type: string
         status:
-          $ref: '#/components/schemas/TerminalStatus'
+          $ref: '#/components/schemas/KioskStatus'
+        health:
+          $ref: '#/components/schemas/KioskHealth'
+        deviceCount:
+          type: integer
+          minimum: 0
         lastSeenAt:
           type: string
           format: date-time
-    TerminalDetail:
-      allOf:
-        - $ref: '#/components/schemas/TerminalSummary'
-        - type: object
-          required: [services]
-          properties:
-            softwareVersion:
-              type: string
-            services:
-              description: Per-service availability, used by the degraded mode
-              type: array
-              items:
-                $ref: '#/components/schemas/ServiceAvailability'
-    ServiceAvailability:
-      type: object
-      required: [service, available]
-      properties:
-        service:
+        createdAt:
           type: string
-          enum: [DEPOSIT, BALANCE, HISTORY, PRINTER, CASH_ACCEPTOR]
-        available:
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    KioskCreate:
+      type: object
+      required: [kioskId, name, location]
+      additionalProperties: false
+      properties:
+        kioskId:
+          $ref: '#/components/schemas/Code'
+        name:
+          type: string
+          minLength: 1
+        location:
+          $ref: '#/components/schemas/Location'
+        ipAddress:
+          type: string
+          format: ipv4
+        softwareVersion:
+          type: string
+        status:
+          description: Defaults to MAINTENANCE until the kiosk is configured
+          allOf:
+            - $ref: '#/components/schemas/KioskStatus'
+    KioskUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        location:
+          $ref: '#/components/schemas/Location'
+        ipAddress:
+          type: string
+          format: ipv4
+        softwareVersion:
+          type: string
+        status:
+          $ref: '#/components/schemas/KioskStatus'
+
+    # ─────────────── KMS: kiosk services ───────────────
+    KioskServiceAssignment:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled:
+          description: Switch the service on or off on this kiosk only
           type: boolean
+    ServiceAvailabilityStatus:
+      type: string
+      enum: [AVAILABLE, DEGRADED, UNAVAILABLE]
+    AvailabilityIssue:
+      type: object
+      required: [reasonCode, message]
+      properties:
+        reasonCode:
+          type: string
+          enum: [SERVICE_DISABLED, SERVICE_DISABLED_ON_KIOSK, KIOSK_NOT_ONLINE, DEVICE_MISSING, DEVICE_NOT_USABLE]
+        message:
+          type: string
+        deviceTypeCode:
+          $ref: '#/components/schemas/Code'
+        requirement:
+          $ref: '#/components/schemas/RequirementLevel'
+    KioskService:
+      type: object
+      required: [serviceCode, name, enabled, availability, issues, assignedAt]
+      properties:
+        serviceCode:
+          $ref: '#/components/schemas/Code'
+        name:
+          type: string
+        enabled:
+          description: Assignment switch on this kiosk
+          type: boolean
+        availability:
+          $ref: '#/components/schemas/ServiceAvailabilityStatus'
+        issues:
+          description: Why the service is not fully available; empty when everything is fine
+          type: array
+          items:
+            $ref: '#/components/schemas/AvailabilityIssue'
+        assignedAt:
+          type: string
+          format: date-time
+
+    # ─────────────── KMS: devices ───────────────
+    DeviceStatus:
+      description: |
+        `OPERATIONAL` and `WARNING` (e.g. paper low) are usable; `ERROR`,
+        `OFFLINE` (not responding), `MAINTENANCE` and `DISABLED` are not.
+      type: string
+      enum: [OPERATIONAL, WARNING, ERROR, OFFLINE, MAINTENANCE, DISABLED]
+    StatusChangeSource:
+      type: string
+      enum: [DEVICE, OPERATOR, SYSTEM]
+    KioskDevice:
+      type: object
+      required: [deviceId, kioskId, deviceTypeCode, serialNumber, status, statusChangedAt, installedAt, updatedAt]
+      properties:
+        deviceId:
+          type: string
+        kioskId:
+          $ref: '#/components/schemas/Code'
+        deviceTypeCode:
+          $ref: '#/components/schemas/Code'
+        serialNumber:
+          type: string
+        manufacturer:
+          type: string
+        model:
+          type: string
+        firmwareVersion:
+          type: string
+        status:
+          $ref: '#/components/schemas/DeviceStatus'
+        statusReasonCode:
+          type: string
+          examples: [PAPER_LOW, JAM, NOT_RESPONDING]
+        statusReason:
+          type: string
+        statusChangedAt:
+          type: string
+          format: date-time
+        installedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    KioskDeviceCreate:
+      type: object
+      required: [deviceTypeCode, serialNumber]
+      additionalProperties: false
+      properties:
+        deviceTypeCode:
+          $ref: '#/components/schemas/Code'
+        serialNumber:
+          type: string
+          minLength: 1
+        manufacturer:
+          type: string
+        model:
+          type: string
+        firmwareVersion:
+          type: string
+        status:
+          description: Initial status, defaults to OPERATIONAL
+          allOf:
+            - $ref: '#/components/schemas/DeviceStatus'
+    KioskDeviceUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        serialNumber:
+          type: string
+          minLength: 1
+        manufacturer:
+          type: string
+        model:
+          type: string
+        firmwareVersion:
+          type: string
+    DeviceStatusChangeRequest:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status:
+          $ref: '#/components/schemas/DeviceStatus'
+        reasonCode:
+          type: string
+          examples: [PAPER_LOW, JAM, NOT_RESPONDING]
         reason:
           type: string
+        source:
+          description: Defaults to OPERATOR
+          allOf:
+            - $ref: '#/components/schemas/StatusChangeSource'
+    DeviceStatusChange:
+      description: One entry of the device status history
+      type: object
+      required: [changeId, kioskId, deviceId, deviceTypeCode, newStatus, source, changedAt, correlationId]
+      properties:
+        changeId:
+          type: string
+        kioskId:
+          $ref: '#/components/schemas/Code'
+        deviceId:
+          type: string
+        deviceTypeCode:
+          $ref: '#/components/schemas/Code'
+        previousStatus:
+          description: Absent for the initial status
+          allOf:
+            - $ref: '#/components/schemas/DeviceStatus'
+        newStatus:
+          $ref: '#/components/schemas/DeviceStatus'
+        reasonCode:
+          type: string
+        reason:
+          type: string
+        source:
+          $ref: '#/components/schemas/StatusChangeSource'
+        changedBy:
+          description: User id when the source is OPERATOR
+          type: string
+        changedAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+    DeviceStatusHistoryPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceStatusChange'
+        nextCursor:
+          description: Absent on the last page
+          type: string
 
+    # ─────────────── KMS settings: device catalogue ───────────────
+    DeviceCategory:
+      type: string
+      enum: [CASH, CARD, PRINTER, INPUT, DISPLAY, SENSOR, OTHER]
+    DeviceType:
+      type: object
+      required: [deviceTypeCode, name, category, createdAt, updatedAt]
+      properties:
+        deviceTypeCode:
+          $ref: '#/components/schemas/Code'
+        name:
+          type: string
+        category:
+          $ref: '#/components/schemas/DeviceCategory'
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    DeviceTypeCreate:
+      type: object
+      required: [deviceTypeCode, name, category]
+      additionalProperties: false
+      properties:
+        deviceTypeCode:
+          $ref: '#/components/schemas/Code'
+        name:
+          type: string
+          minLength: 1
+        category:
+          $ref: '#/components/schemas/DeviceCategory'
+        description:
+          type: string
+    DeviceTypeUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        category:
+          $ref: '#/components/schemas/DeviceCategory'
+        description:
+          type: string
+
+    # ─────────────── KMS settings: services ───────────────
+    RequirementLevel:
+      description: |
+        How much a service needs a device type:
+        `MANDATORY` – service unavailable without it;
+        `RECOMMENDED` – service degraded without it;
+        `OPTIONAL` – service available without it (feature reduced, e.g. no receipt).
+      type: string
+      enum: [MANDATORY, RECOMMENDED, OPTIONAL]
+    ServiceDeviceRequirement:
+      type: object
+      required: [deviceTypeCode, requirement]
+      properties:
+        deviceTypeCode:
+          $ref: '#/components/schemas/Code'
+        requirement:
+          $ref: '#/components/schemas/RequirementLevel'
+    Service:
+      type: object
+      required: [serviceCode, name, enabled, builtIn, deviceRequirements, createdAt, updatedAt]
+      properties:
+        serviceCode:
+          $ref: '#/components/schemas/Code'
+        name:
+          type: string
+        description:
+          type: string
+        enabled:
+          description: Global switch; when false the service is unavailable on every kiosk
+          type: boolean
+        builtIn:
+          description: Built-in services (DEPOSIT, WITHDRAWAL, BALANCE, HISTORY) cannot be deleted
+          type: boolean
+        deviceRequirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceDeviceRequirement'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ServiceCreate:
+      type: object
+      required: [serviceCode, name]
+      additionalProperties: false
+      properties:
+        serviceCode:
+          $ref: '#/components/schemas/Code'
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        enabled:
+          description: Defaults to true
+          type: boolean
+    ServiceUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+        description:
+          type: string
+        enabled:
+          type: boolean
+
+    # ─────────────── KMS settings: deposit and withdrawal ───────────────
+    ReceiptMode:
+      type: string
+      enum: [ALWAYS, ON_REQUEST, NEVER]
+    DepositSettings:
+      description: Rules of the DEPOSIT service. `minAmount <= maxAmountPerTransaction <= dailyLimitPerAccount`.
+      type: object
+      required: [currency, minAmount, maxAmountPerTransaction, dailyLimitPerAccount, acceptedDenominations, maxNotesPerTransaction, receiptMode]
+      additionalProperties: false
+      properties:
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        minAmount:
+          type: number
+          exclusiveMinimum: 0
+        maxAmountPerTransaction:
+          type: number
+          exclusiveMinimum: 0
+        dailyLimitPerAccount:
+          type: number
+          exclusiveMinimum: 0
+        acceptedDenominations:
+          description: Notes the cash acceptor takes
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
+        maxNotesPerTransaction:
+          type: integer
+          minimum: 1
+        receiptMode:
+          $ref: '#/components/schemas/ReceiptMode'
+    WithdrawalSettings:
+      description: Rules of the WITHDRAWAL service. `minAmount <= maxAmountPerTransaction <= dailyLimitPerAccount`.
+      type: object
+      required: [currency, minAmount, maxAmountPerTransaction, dailyLimitPerAccount, amountMultipleOf, dispensableDenominations, maxNotesPerTransaction, presetAmounts, receiptMode]
+      additionalProperties: false
+      properties:
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        minAmount:
+          type: number
+          exclusiveMinimum: 0
+        maxAmountPerTransaction:
+          type: number
+          exclusiveMinimum: 0
+        dailyLimitPerAccount:
+          type: number
+          exclusiveMinimum: 0
+        amountMultipleOf:
+          description: Every amount must be a multiple of this value (smallest dispensable note)
+          type: integer
+          minimum: 1
+        dispensableDenominations:
+          description: Notes loaded in the cash dispenser
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: integer
+            minimum: 1
+        maxNotesPerTransaction:
+          type: integer
+          minimum: 1
+        presetAmounts:
+          description: Quick-pick amounts shown on the kiosk
+          type: array
+          uniqueItems: true
+          items:
+            type: number
+            exclusiveMinimum: 0
+        receiptMode:
+          $ref: '#/components/schemas/ReceiptMode'
+
+    # ─────────────── errors ───────────────
     Error:
       type: object
       required: [code, message, correlationId]
@@ -527,14 +2171,20 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Duplicate code, or blocked by a dependency (in use, built-in, kiosk online)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
     Refused:
-      description: Business refusal (limit exceeded, account blocked, ...)
+      description: Business refusal (limit, insufficient funds, service unavailable on the kiosk, ...)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     ServiceUnavailable:
-      description: A downstream system is unavailable (e.g. CBS down)
+      description: A downstream system is unavailable (CBS for banking calls, KMS for /kms calls)
       content:
         application/json:
           schema:

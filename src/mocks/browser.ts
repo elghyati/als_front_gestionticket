@@ -1,5 +1,5 @@
 import { setupWorker } from "msw/browser";
-import { resetMockState } from "./fixtures";
+import { resetMockState } from "./state";
 import { handlers } from "./handlers";
 import { getScenario, isScenario, SCENARIOS, setScenario, setTimeoutDelay, type Scenario } from "./scenarios";
 

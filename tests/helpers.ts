@@ -11,8 +11,12 @@ export function userWithRole(role: MockUser["roles"][number]): MockUser {
 
 export const customer = userWithRole("CUSTOMER");
 export const agent = userWithRole("AGENT");
+export const supervisor = userWithRole("SUPERVISOR");
+export const admin = userWithRole("ADMIN");
 
 export const clientFor = (user?: MockUser) =>
   createApiClient({ baseUrl: BASE_URL, getToken: () => (user ? tokenFor(user) : undefined) });
 
 export const headers = () => ({ "X-Correlation-Id": newCorrelationId() });
+
+export const idempotentHeaders = () => ({ ...headers(), "Idempotency-Key": crypto.randomUUID() });

@@ -16,7 +16,8 @@ export interface ApiClientOptions {
 export const newCorrelationId = (): string => crypto.randomUUID();
 
 export function createApiClient({ baseUrl = API_BASE_PATH, getToken }: ApiClientOptions = {}) {
-  const client = createClient<paths>({ baseUrl });
+  // Resolve fetch per call: a client created before a mock (MSW in Node) patches it keeps working.
+  const client = createClient<paths>({ baseUrl, fetch: (request) => globalThis.fetch(request) });
   client.use({
     onRequest({ request }) {
       const token = getToken?.();
