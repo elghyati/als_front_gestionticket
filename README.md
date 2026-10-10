@@ -77,6 +77,7 @@ L'état de santé du kiosque en découle :
 | `npm run api:lint` | Valide le contrat (Redocly) |
 | `npm run api:types` | Régénère `src/api/schema.d.ts` après une modification du contrat |
 | `npm run api:docs` | Génère la documentation HTML dans `docs/api/index.html` |
+| `npm run mock:server` | **Lance le mock MSW comme un vrai serveur** sur `http://localhost:4000/api/v1` : mêmes données, même logique et mêmes scénarios que les tests (voir ci-dessous) |
 | `npm run mock:prism` | Lance un mock Prism sur `http://localhost:4010`, sans le préfixe `/api/v1` (utile pour curl, Postman ou l'équipe back-end ; réponses générées, sans état) |
 | `npm test` | Tests de contrat et de comportement |
 | `npm run check` | Les trois vérifications ci-dessus (lint, typecheck, tests) |
@@ -163,6 +164,38 @@ Trois façons de changer de scénario :
 Dans les tests Vitest : `setScenario("cbsDown")`, importé depuis `src/mocks/scenarios`. Le scénario et les données sont réinitialisés après chaque test.
 
 Le mock garde un **état en mémoire**. Un dépôt modifie le solde. Un changement de statut alimente l'historique et modifie la disponibilité des services. Une exigence modifiée change aussitôt la disponibilité sur tous les kiosques.
+
+## Serveur mock pour Postman, curl ou une autre application
+
+```cmd
+npm run mock:server
+```
+
+L'API est servie sous `http://localhost:4000/api/v1`. CORS est ouvert, donc une application lancée sur un autre port peut l'appeler. Pour changer de port : `set PORT=5000 && npm run mock:server`.
+
+Chaque appel doit envoyer deux en-têtes :
+
+| En-tête | Valeur |
+|---|---|
+| `X-Correlation-Id` | Un UUID, par exemple `3f1c1b0e-0000-4000-8000-000000000001` |
+| `Authorization` | `Bearer mock-token-U-CUST-1` (client), `…U-AGENT-1`, `…U-SUP-1` ou `…U-ADMIN-1`. On peut aussi utiliser le `accessToken` renvoyé par `POST /auth/login` |
+
+Le dépôt et le retrait demandent aussi l'en-tête `Idempotency-Key: <uuid>`.
+
+Exemple (Windows `cmd`) :
+```cmd
+curl -H "Authorization: Bearer mock-token-U-AGENT-1" -H "X-Correlation-Id: 3f1c1b0e-0000-4000-8000-000000000001" http://localhost:4000/api/v1/kms/kiosks
+```
+
+Pilotage du mock (sans authentification) :
+
+| Appel | Effet |
+|---|---|
+| `GET http://localhost:4000/__mock` | Scénario courant et liste des scénarios |
+| `POST http://localhost:4000/__mock/scenario` avec `{"scenario":"cbsDown"}` (et `"timeoutDelayMs": 500` en option) | Change de scénario |
+| `POST http://localhost:4000/__mock/reset` | Restaure les données de démonstration et le scénario `ok` |
+
+L'état est conservé tant que le serveur tourne : un dépôt modifie le solde, un changement de statut alimente l'historique, etc.
 
 ## Modifier le contrat
 
