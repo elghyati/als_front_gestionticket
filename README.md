@@ -24,7 +24,9 @@ npm run check      # lint du contrat, typecheck, tests
 | **KMS – périphériques** | CRUD `/kms/kiosks/{id}/devices`, changement de statut, historique des statuts (par périphérique ou par kiosque) |
 | **KMS – paramétrage** | Catalogue global des types de périphériques, services (CRUD), relations service ↔ type de périphérique avec un niveau d'exigence, paramètres des services dépôt et retrait |
 
-Le détail est dans `openapi/openapi.yaml`. On peut aussi générer la documentation HTML avec `npm run api:docs`.
+📘 **Guide fonctionnel des endpoints** (à quoi sert chaque appel, parcours, règles métier, codes d'erreur) : [`docs/api/ENDPOINTS.md`](docs/api/ENDPOINTS.md).
+
+La référence technique est `openapi/openapi.yaml`, consultable dans Swagger (`npm run mock:server`, puis http://localhost:4000/docs) ou en HTML (`npm run api:docs`).
 
 ### Disponibilité d'un service sur un kiosque
 
@@ -73,6 +75,7 @@ L'état de santé du kiosque en découle :
 | `tests/contract.test.ts` | Tests de contrat : chaque appel, dans chaque scénario, est validé contre le schéma OpenAPI |
 | `tests/banking.test.ts`, `tests/kms.test.ts` | Comportement du mock, testé avec le client typé |
 | `tests/postman.test.ts` | Vérifie que la collection Postman est à jour et que chacune de ses requêtes fonctionne |
+| `docs/api/ENDPOINTS.md` | **Guide fonctionnel des 38 endpoints** |
 | `docs/api/DECISIONS.md` | Décisions, questions ouvertes, risques |
 
 ## Scripts

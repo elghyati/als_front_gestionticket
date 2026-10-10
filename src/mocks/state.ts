@@ -5,6 +5,7 @@ import * as fx from "./fixtures";
 export interface MockState {
   balances: Map<string, Schemas["Balance"]>;
   transactions: Schemas["TransactionEnvelope"][];
+  /** Accepted operations by `<DEPOSIT|WITHDRAWAL>:<Idempotency-Key>`. */
   idempotency: Map<string, Schemas["TransactionEnvelope"]>;
   kiosks: Map<string, fx.KioskRecord>;
   kioskDevices: Schemas["KioskDevice"][];

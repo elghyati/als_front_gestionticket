@@ -103,6 +103,16 @@ describe("deposit", () => {
     expect(await balance()).toBe(before + 100);
   });
 
+  it("an Idempotency-Key already used by a withdrawal does not replay it", async () => {
+    const header = idempotentHeaders();
+    await clientFor(customer).POST("/withdrawals", {
+      params: { header },
+      body: { accountId: "ACC-001", kioskId: "KIOSK-01", amount: { amount: 200, currency: "MAD" } },
+    });
+    const { data } = await deposit({ amount: 100 }, header);
+    expect(data).toMatchObject({ type: "DEPOSIT", amount: { amount: 100 } });
+  });
+
   it("rejects an invalid request with field details", async () => {
     const { error, response } = await deposit({ amount: -5, kioskId: "KIOSK-XX" });
     expect(response.status).toBe(400);

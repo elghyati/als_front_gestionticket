@@ -63,7 +63,9 @@ async function cashOperation(
   if (!idempotencyKey) {
     return error(request, 400, "MISSING_IDEMPOTENCY_KEY", "Idempotency-Key header is required");
   }
-  const previous = state.idempotency.get(idempotencyKey);
+  // Keys are scoped per operation: a withdrawal never replays a deposit.
+  const scopedKey = `${kind}:${idempotencyKey}`;
+  const previous = state.idempotency.get(scopedKey);
   if (previous) return json<Transaction>(request, previous, 201);
 
   const body = await readBody<CashRequest>(request);
@@ -120,7 +122,7 @@ async function cashOperation(
   balance.ledger.amount += delta;
   balance.asOf = transaction.createdAt;
   state.transactions.push(transaction);
-  state.idempotency.set(idempotencyKey, transaction);
+  state.idempotency.set(scopedKey, transaction);
   return json<Transaction>(request, transaction, 201);
 }
 
