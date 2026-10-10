@@ -1,0 +1,2500 @@
+{
+  "info": {
+    "_postman_id": "5f0c2a6e-8a43-4c1e-9a55-3b7f8e0d4a11",
+    "name": "ALS – MVP API contract (0.2.0)",
+    "description": "Collection générée depuis `openapi/openapi.yaml` (`npm run postman:build`). Ne pas modifier à la main.\n\n1. Lancez `npm run mock:server` (ou `npm run mock:prism`) et choisissez l'environnement correspondant.\n2. Chaque requête porte déjà son token (variables `token_*`), un `X-Correlation-Id` et, pour les opérations d'argent, un `Idempotency-Key` générés.\n3. Pour rejouer toute la collection (Run collection), lancez d'abord **Réinitialiser** dans le dossier 0.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0 · Pilotage du mock (npm run mock:server)",
+      "description": "Uniquement avec `npm run mock:server`. **Réinitialiser** restaure les données : certaines requêtes de la collection en suppriment ou en créent.",
+      "item": [
+        {
+          "name": "Lire le scénario courant",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{mockUrl}}/__mock",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "__mock"
+              ]
+            },
+            "description": "Scénario courant et liste des scénarios."
+          },
+          "response": []
+        },
+        {
+          "name": "Changer de scénario",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{mockUrl}}/__mock/scenario",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "__mock",
+                "scenario"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"cbsDown\",\n  \"timeoutDelayMs\": 3000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Scénarios : `ok`, `cbsDown`, `kmsDown`, `timeout`, `refused`, `unauthorized`. `timeoutDelayMs` est optionnel."
+          },
+          "response": []
+        },
+        {
+          "name": "Réinitialiser les données et le scénario",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [],
+            "url": {
+              "raw": "{{mockUrl}}/__mock/reset",
+              "host": [
+                "{{mockUrl}}"
+              ],
+              "path": [
+                "__mock",
+                "reset"
+              ]
+            },
+            "description": "Restaure les données de démonstration et le scénario `ok`. À lancer avant de rejouer la collection."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1 · auth",
+      "description": "Authentication (kiosk card/PIN and portal user login)",
+      "item": [
+        {
+          "name": "Log in and get an access token",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"KIOSK\",\n  \"cardNumber\": \"4000000000000001\",\n  \"pin\": \"1234\",\n  \"kioskId\": \"KIOSK-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Sans authentification.**"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "if (pm.response.code === 200) {",
+                  "    const session = pm.response.json();",
+                  "    if (session.user.roles.includes(\"CUSTOMER\")) pm.collectionVariables.set(\"token_customer\", session.accessToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2 · accounts",
+      "description": "Balance and history",
+      "item": [
+        {
+          "name": "Get the balance of an account",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_customer}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/ACC-001/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "ACC-001",
+                "balance"
+              ]
+            },
+            "description": "**Rôle utilisé :** CUSTOMER (variable `{{token_customer}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get the transaction history of an account (newest first)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_customer}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/accounts/ACC-001/transactions?limit=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "accounts",
+                "ACC-001",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "**Rôle utilisé :** CUSTOMER (variable `{{token_customer}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3 · transactions",
+      "description": "Deposit and withdrawal operations",
+      "item": [
+        {
+          "name": "Make a deposit on a kiosk",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_customer}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par opération"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/deposits",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "deposits"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"ACC-001\",\n  \"kioskId\": \"KIOSK-01\",\n  \"amount\": {\n    \"amount\": 200,\n    \"currency\": \"MAD\"\n  },\n  \"notes\": [\n    {\n      \"denomination\": 100,\n      \"count\": 2\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `422` when the DEPOSIT service is not available on the\nkiosk, or when a rule of `DepositSettings` is not met.\n\n**Rôle utilisé :** CUSTOMER (variable `{{token_customer}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Make a cash withdrawal on a kiosk",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_customer}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par opération"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/withdrawals",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "withdrawals"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"ACC-001\",\n  \"kioskId\": \"KIOSK-01\",\n  \"amount\": {\n    \"amount\": 500,\n    \"currency\": \"MAD\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Refused with `422` when the WITHDRAWAL service is not available on the\nkiosk, when a rule of `WithdrawalSettings` is not met, or when the\navailable balance is insufficient. The accepted envelope carries the\nnotes to dispense in `cashBreakdown`.\n\n**Rôle utilisé :** CUSTOMER (variable `{{token_customer}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4 · kms-kiosks",
+      "description": "Kiosks (CRUD) and the services assigned to them",
+      "item": [
+        {
+          "name": "List the kiosks",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks?health=DEGRADED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks"
+              ],
+              "query": [
+                {
+                  "key": "health",
+                  "value": "DEGRADED"
+                }
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create a kiosk",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kioskId\": \"KIOSK-99\",\n  \"name\": \"Kiosque Test\",\n  \"location\": {\n    \"branchName\": \"Agence Test\",\n    \"city\": \"Fès\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get a kiosk",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update a kiosk (partial)",
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-03",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-03"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"MAINTENANCE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete a kiosk",
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-99",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-99"
+              ]
+            },
+            "description": "Refused with `409` while the kiosk is `ONLINE` (put it in\n`MAINTENANCE` first). Deletes its devices and service assignments;\nthe device status history is kept for audit.\n\n**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List the services assigned to a kiosk, with their computed availability",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_customer}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02",
+                "services"
+              ]
+            },
+            "description": "Used by the kiosk app to build its menu and by the degraded mode.\n\n**Rôle utilisé :** CUSTOMER (variable `{{token_customer}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Assign a service to a kiosk, or update the assignment",
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-03/services/WITHDRAWAL",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-03",
+                "services",
+                "WITHDRAWAL"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Remove a service from a kiosk",
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-01/services/HISTORY",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-01",
+                "services",
+                "HISTORY"
+              ]
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5 · kms-devices",
+      "description": "Devices of a kiosk, their status and status history",
+      "item": [
+        {
+          "name": "List the devices of a kiosk",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02/devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02",
+                "devices"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Install a device on a kiosk",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-03/devices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-03",
+                "devices"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceTypeCode\": \"RECEIPT_PRINTER\",\n  \"serialNumber\": \"SN-NEW-1\",\n  \"model\": \"TP-80\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Records the initial status in the status history.\n\n**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get a device of a kiosk",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02/devices/DEV-0204",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02",
+                "devices",
+                "DEV-0204"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update a device (partial). The status changes through its own endpoint.",
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02/devices/DEV-0204",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02",
+                "devices",
+                "DEV-0204"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firmwareVersion\": \"1.0.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Remove a device from a kiosk",
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02/devices/DEV-0206",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02",
+                "devices",
+                "DEV-0206"
+              ]
+            },
+            "description": "The device status history is kept for audit.\n\n**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Change the status of a device",
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_supervisor}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02/devices/DEV-0204/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02",
+                "devices",
+                "DEV-0204",
+                "status"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"OPERATIONAL\",\n  \"reason\": \"Bourrage résolu\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Records a `DeviceStatusChange` in the history when the status or the\nreason code changes. Sending the current status and reason again is a\nno-op (no history entry), so the call is safe to retry.\n\n**Rôle utilisé :** SUPERVISOR (variable `{{token_supervisor}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status history of one device (newest first)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02/devices/DEV-0204/status-history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02",
+                "devices",
+                "DEV-0204",
+                "status-history"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Status history of all the devices of a kiosk (newest first)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/kiosks/KIOSK-02/status-history?status=ERROR&limit=10",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "kiosks",
+                "KIOSK-02",
+                "status-history"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ERROR"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Includes devices that were removed since.\n\n**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6 · kms-settings",
+      "description": "Configuration – device catalogue, services, service/device requirements, deposit and withdrawal settings",
+      "item": [
+        {
+          "name": "Global list of device types (catalogue)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/device-types?category=CASH",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "device-types"
+              ],
+              "query": [
+                {
+                  "key": "category",
+                  "value": "CASH"
+                }
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Add a device type to the catalogue",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/device-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "device-types"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"deviceTypeCode\": \"NFC_READER\",\n  \"name\": \"Lecteur NFC\",\n  \"category\": \"CARD\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get a device type",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/device-types/CASH_ACCEPTOR",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "device-types",
+                "CASH_ACCEPTOR"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update a device type (partial)",
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/device-types/CAMERA",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "device-types",
+                "CAMERA"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Caméra frontale\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Remove a device type from the catalogue",
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/device-types/BARCODE_SCANNER",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "device-types",
+                "BARCODE_SCANNER"
+              ]
+            },
+            "description": "Refused with `409` while a kiosk device or a service requirement uses it.\n\n**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List the services that can be assigned to kiosks",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "services"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Create a service",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/services",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "services"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serviceCode\": \"BILL_PAYMENT\",\n  \"name\": \"Paiement de factures\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get a service with its device requirements",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/services/WITHDRAWAL",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "services",
+                "WITHDRAWAL"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Update a service (partial). `enabled = false` disables it on every kiosk.",
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/services/STATEMENT",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "services",
+                "STATEMENT"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete a service",
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/services/STATEMENT",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "services",
+                "STATEMENT"
+              ]
+            },
+            "description": "Refused with `409` for a built-in service or while the service is assigned to a kiosk.\n\n**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Device types a service needs, with their requirement level",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/services/DEPOSIT/device-requirements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "services",
+                "DEPOSIT",
+                "device-requirements"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Link a device type to a service with a requirement level, or change the level",
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/services/DEPOSIT/device-requirements/CAMERA",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "services",
+                "DEPOSIT",
+                "device-requirements",
+                "CAMERA"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"requirement\": \"OPTIONAL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Unlink a device type from a service",
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/services/DEPOSIT/device-requirements/RECEIPT_PRINTER",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "services",
+                "DEPOSIT",
+                "device-requirements",
+                "RECEIPT_PRINTER"
+              ]
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get the deposit service settings",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_customer}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/deposit-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "deposit-settings"
+              ]
+            },
+            "description": "**Rôle utilisé :** CUSTOMER (variable `{{token_customer}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Replace the deposit service settings",
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/deposit-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "deposit-settings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currency\": \"MAD\",\n  \"minAmount\": 50,\n  \"maxAmountPerTransaction\": 15000,\n  \"dailyLimitPerAccount\": 50000,\n  \"acceptedDenominations\": [\n    20,\n    50,\n    100,\n    200\n  ],\n  \"maxNotesPerTransaction\": 200,\n  \"receiptMode\": \"ON_REQUEST\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get the withdrawal service settings",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_customer}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/withdrawal-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "withdrawal-settings"
+              ]
+            },
+            "description": "**Rôle utilisé :** CUSTOMER (variable `{{token_customer}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Replace the withdrawal service settings",
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_admin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kms/withdrawal-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kms",
+                "withdrawal-settings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currency\": \"MAD\",\n  \"minAmount\": 100,\n  \"maxAmountPerTransaction\": 5000,\n  \"dailyLimitPerAccount\": 10000,\n  \"amountMultipleOf\": 100,\n  \"dispensableDenominations\": [\n    100,\n    200\n  ],\n  \"maxNotesPerTransaction\": 40,\n  \"presetAmounts\": [\n    200,\n    400,\n    1000\n  ],\n  \"receiptMode\": \"ON_REQUEST\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "**Rôle utilisé :** ADMIN (variable `{{token_admin}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000/api/v1"
+    },
+    {
+      "key": "mockUrl",
+      "value": "http://localhost:4000"
+    },
+    {
+      "key": "token_customer",
+      "value": "mock-token-U-CUST-1"
+    },
+    {
+      "key": "token_agent",
+      "value": "mock-token-U-AGENT-1"
+    },
+    {
+      "key": "token_supervisor",
+      "value": "mock-token-U-SUP-1"
+    },
+    {
+      "key": "token_admin",
+      "value": "mock-token-U-ADMIN-1"
+    }
+  ]
+}

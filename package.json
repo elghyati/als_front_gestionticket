@@ -12,7 +12,8 @@
     "test": "vitest run",
     "api:check-types": "npm run api:types && git diff --exit-code -- src/api/schema.d.ts",
     "check": "npm run api:lint && npm run typecheck && npm test",
-    "mock:server": "tsx src/mocks/http-server.ts"
+    "mock:server": "tsx src/mocks/http-server.ts",
+    "postman:build": "tsx scripts/build-postman.ts"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0"
@@ -26,6 +27,7 @@
     "ajv-formats": "^3.0.1",
     "msw": "^2.15.0",
     "openapi-typescript": "^7.13.0",
+    "swagger-ui-dist": "^5.33.1",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^5.0.3"

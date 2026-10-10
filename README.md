@@ -64,10 +64,15 @@ L'état de santé du kiosque en découle :
 | `src/mocks/kms/availability.ts` | Règles de disponibilité des services et de santé des kiosques |
 | `src/mocks/handlers/` | Handlers MSW, un fichier par domaine (`auth`, `accounts`, `transactions`, `kiosks`, `devices`, `settings`) |
 | `src/mocks/scenarios.ts` | Interrupteurs de scénario |
+| `src/mocks/samples.ts` | Un exemple de requête valide par opération : utilisé par les tests de contrat, Swagger et Postman |
+| `src/mocks/http-server.ts`, `src/mocks/swagger/` | Serveur HTTP du mock (`npm run mock:server`) et page Swagger UI |
+| `scripts/postman.ts` | Génère la collection Postman à partir du contrat |
+| `postman/` | **Collection et environnements Postman générés**, prêts à importer |
 | `src/mocks/browser.ts` / `node.ts` | Démarrage du mock dans le navigateur ou dans Node (tests) |
 | `public/mockServiceWorker.js` | Script du Service Worker MSW (généré par `msw init`) |
 | `tests/contract.test.ts` | Tests de contrat : chaque appel, dans chaque scénario, est validé contre le schéma OpenAPI |
 | `tests/banking.test.ts`, `tests/kms.test.ts` | Comportement du mock, testé avec le client typé |
+| `tests/postman.test.ts` | Vérifie que la collection Postman est à jour et que chacune de ses requêtes fonctionne |
 | `docs/api/DECISIONS.md` | Décisions, questions ouvertes, risques |
 
 ## Scripts
@@ -77,7 +82,8 @@ L'état de santé du kiosque en découle :
 | `npm run api:lint` | Valide le contrat (Redocly) |
 | `npm run api:types` | Régénère `src/api/schema.d.ts` après une modification du contrat |
 | `npm run api:docs` | Génère la documentation HTML dans `docs/api/index.html` |
-| `npm run mock:server` | **Lance le mock MSW comme un vrai serveur** sur `http://localhost:4000/api/v1` : mêmes données, même logique et mêmes scénarios que les tests (voir ci-dessous) |
+| `npm run mock:server` | **Lance le mock MSW comme un vrai serveur** sur `http://localhost:4000/api/v1`, avec **Swagger UI** sur `http://localhost:4000/docs` : mêmes données, même logique et mêmes scénarios que les tests (voir ci-dessous) |
+| `npm run postman:build` | Régénère la collection Postman (`postman/`) après une modification du contrat ou des exemples |
 | `npm run mock:prism` | Lance un mock Prism sur `http://localhost:4010`, sans le préfixe `/api/v1` (utile pour curl, Postman ou l'équipe back-end ; réponses générées, sans état) |
 | `npm test` | Tests de contrat et de comportement |
 | `npm run check` | Les trois vérifications ci-dessus (lint, typecheck, tests) |
@@ -165,6 +171,45 @@ Dans les tests Vitest : `setScenario("cbsDown")`, importé depuis `src/mocks/sce
 
 Le mock garde un **état en mémoire**. Un dépôt modifie le solde. Un changement de statut alimente l'historique et modifie la disponibilité des services. Une exigence modifiée change aussitôt la disponibilité sur tous les kiosques.
 
+## Swagger UI
+
+```cmd
+npm run mock:server
+```
+
+Ouvrez ensuite **http://localhost:4000/docs**. Les 38 endpoints y sont classés par domaine, avec leurs schémas et leurs réponses.
+
+Le bouton **Try it out → Execute** appelle directement le mock :
+- les paramètres et le corps sont **pré-remplis** avec des exemples valides : il suffit de cliquer sur *Execute* ;
+- la barre du haut permet de choisir le **rôle**, qui fournit le token : `ADMIN` par défaut, `CUSTOMER` pour voir un refus 403 sur le KMS ;
+- elle permet aussi de choisir le **scénario** (`cbsDown`, `kmsDown`, `timeout`…) et de **réinitialiser les données** ;
+- `X-Correlation-Id` et `Idempotency-Key` sont générés automatiquement quand on les laisse vides.
+
+Le contrat brut est aussi disponible sur `http://localhost:4000/openapi.yaml`. Les modifications de `openapi/openapi.yaml` apparaissent après un simple rechargement de la page.
+
+## Collection Postman
+
+Les fichiers sont dans `postman/` :
+
+| Fichier | Contenu |
+|---|---|
+| `als-api.postman_collection.json` | Les 38 requêtes, classées par dossier (auth, comptes, opérations, kiosques, périphériques, paramétrage), plus un dossier « 0 · Pilotage du mock » |
+| `als-mock-server.postman_environment.json` | Environnement pour `npm run mock:server` (`http://localhost:4000/api/v1`) |
+| `als-prism.postman_environment.json` | Environnement pour `npm run mock:prism` (`http://localhost:4010`) |
+
+**Importer** : dans Postman, *Import*, puis glissez les trois fichiers. Choisissez ensuite l'environnement **« ALS – Mock MSW (localhost:4000) »** en haut à droite.
+
+Chaque requête est prête à l'emploi :
+- le bon token selon le rôle (variables `token_customer`, `token_agent`, `token_supervisor`, `token_admin`) ;
+- un `X-Correlation-Id`, et un `Idempotency-Key` pour le dépôt et le retrait, générés par `{{$guid}}` ;
+- un corps d'exemple valide ;
+- un test qui vérifie le code HTTP attendu ;
+- un en-tête `X-Mock-Scenario` désactivé, à cocher pour forcer un scénario sur une seule requête.
+
+**Rejouer toute la collection** (*Run collection*) : elle s'exécute de bout en bout sans erreur. Le dossier 0 se termine par **Réinitialiser**, donc chaque exécution repart des données de démonstration.
+
+Ne modifiez pas ces fichiers à la main : ils sont générés par `npm run postman:build`, et un test vérifie qu'ils sont à jour.
+
 ## Serveur mock pour Postman, curl ou une autre application
 
 ```cmd
@@ -201,7 +246,8 @@ L'état est conservé tant que le serveur tourne : un dépôt modifie le solde, 
 
 1. Modifier `openapi/openapi.yaml`.
 2. Lancer `npm run api:types`, puis adapter les handlers (`src/mocks/handlers/`) et les fixtures.
-3. Si un nouvel appel est ajouté, ajouter son exemple de requête dans `tests/contract.test.ts`. Le test échoue tant qu'un appel du contrat n'a pas d'exemple, et tant que cet exemple n'est pas valide.
-4. Lancer `npm run check`.
+3. Si un nouvel appel est ajouté, ajouter son exemple de requête dans `src/mocks/samples.ts`. Les tests échouent tant qu'un appel du contrat n'a pas d'exemple, et tant que cet exemple n'est pas valide. Cet exemple sert aussi à Swagger et à Postman.
+4. Lancer `npm run postman:build` pour régénérer la collection Postman.
+5. Lancer `npm run check`.
 
 > **Après le gel du lundi 12 octobre**, toute modification du contrat passe par une demande de changement documentée, validée par les responsables concernés (kiosque, portail, back-end). Voir `docs/api/DECISIONS.md`.

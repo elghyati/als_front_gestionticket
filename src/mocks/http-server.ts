@@ -3,6 +3,7 @@
  * running on another origin. Same handlers, data and scenarios as the tests.
  *
  *   npm run mock:server              → http://localhost:4000/api/v1
+ *                                      Swagger UI: http://localhost:4000/docs
  *   PORT=5000 npm run mock:server    (Windows cmd: set PORT=5000 && npm run mock:server)
  *
  * Control endpoints (no auth):
@@ -16,6 +17,7 @@ import { users } from "./fixtures";
 import { handlers } from "./handlers";
 import { getScenario, getTimeoutDelay, isScenario, resetScenario, SCENARIOS, setScenario, setTimeoutDelay } from "./scenarios";
 import { resetMockState } from "./state";
+import { handleDocs } from "./swagger";
 
 const PORT = Number(process.env.PORT ?? 4000);
 
@@ -77,6 +79,7 @@ const server = createServer(async (req, res) => {
     const body = await readRawBody(req);
 
     if (url.pathname.startsWith("/__mock")) return await handleControl(req, res, url.pathname, body);
+    if (await handleDocs(req, res, url.pathname)) return;
 
     const headers = new Headers();
     for (const [name, value] of Object.entries(req.headers)) {
@@ -110,7 +113,8 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => {
   const base = `http://localhost:${PORT}/api/v1`;
-  console.log(`\nMock API (MSW) listening on ${base}\n`);
+  console.log(`\nMock API (MSW) listening on ${base}`);
+  console.log(`Swagger UI:                   http://localhost:${PORT}/docs\n`);
   console.log("Demo tokens (header  Authorization: Bearer <token>):");
   for (const u of users) console.log(`  ${u.roles.join(",").padEnd(10)} mock-token-${u.id}`);
   console.log("\nEvery call needs the header  X-Correlation-Id: <uuid>");
