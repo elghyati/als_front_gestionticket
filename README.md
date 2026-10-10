@@ -25,6 +25,7 @@ npm run check      # lint du contrat, typecheck, tests
 | **KMS – paramétrage** | Catalogue global des types de périphériques, services (CRUD), relations service ↔ type de périphérique avec un niveau d'exigence, paramètres des services dépôt et retrait |
 
 📘 **Guide fonctionnel des endpoints** (à quoi sert chaque appel, parcours, règles métier, codes d'erreur) : [`docs/api/ENDPOINTS.md`](docs/api/ENDPOINTS.md).
+📊 **Schémas des enchaînements** (diagrammes de séquence, logigrammes, modèle de données) : [`docs/api/FLOWS.md`](docs/api/FLOWS.md).
 
 La référence technique est `openapi/openapi.yaml`, consultable dans Swagger (`npm run mock:server`, puis http://localhost:4000/docs) ou en HTML (`npm run api:docs`).
 
@@ -76,6 +77,7 @@ L'état de santé du kiosque en découle :
 | `tests/banking.test.ts`, `tests/kms.test.ts` | Comportement du mock, testé avec le client typé |
 | `tests/postman.test.ts` | Vérifie que la collection Postman est à jour et que chacune de ses requêtes fonctionne |
 | `docs/api/ENDPOINTS.md` | **Guide fonctionnel des 38 endpoints** |
+| `docs/api/FLOWS.md` | **Schémas des enchaînements** (Mermaid, affichés par GitHub) |
 | `docs/api/DECISIONS.md` | Décisions, questions ouvertes, risques |
 
 ## Scripts

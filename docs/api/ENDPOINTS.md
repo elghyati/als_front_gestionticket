@@ -176,6 +176,8 @@ Chaque problème est expliqué dans `issues` avec un `reasonCode` : `DEVICE_MISS
 
 ## 3. Parcours : comment les endpoints s'enchaînent
 
+> 📊 Les mêmes parcours sous forme de **schémas** (diagrammes de séquence, logigrammes, cycle de vie, modèle de données) : [`FLOWS.md`](FLOWS.md).
+
 ### 3.1 Kiosque : un client fait un retrait
 
 ```
