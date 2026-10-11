@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "5f0c2a6e-8a43-4c1e-9a55-3b7f8e0d4a11",
-    "name": "ALS – MVP API contract (0.2.0)",
+    "name": "ALS – MVP API contract (0.3.0)",
     "description": "Collection générée depuis `openapi/openapi.yaml` (`npm run postman:build`). Ne pas modifier à la main.\n\n1. Lancez `npm run mock:server` (ou `npm run mock:prism`) et choisissez l'environnement correspondant.\n2. Chaque requête porte déjà son token (variables `token_*`), un `X-Correlation-Id` et, pour les opérations d'argent, un `Idempotency-Key` générés.\n3. Pour rejouer toute la collection (Run collection), lancez d'abord **Réinitialiser** dans le dossier 0.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -432,7 +432,746 @@
       ]
     },
     {
-      "name": "4 · kms-kiosks",
+      "name": "4 · account-opening",
+      "description": "Account opening with KYC – application, documents, phone verification, automatic checks, compliance decision",
+      "item": [
+        {
+          "name": "List account opening applications (back-office work queue)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_compliance}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications?status=UNDER_REVIEW",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "UNDER_REVIEW"
+                }
+              ]
+            },
+            "description": "Back-office list, newest first. The compliance work queue is\n`?status=UNDER_REVIEW`. Roles: AGENT, SUPERVISOR, ADMIN, COMPLIANCE.\n\n**Rôle utilisé :** COMPLIANCE (variable `{{token_compliance}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Start an account opening application (draft)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"channel\": \"KIOSK\",\n  \"kioskId\": \"KIOSK-01\",\n  \"productCode\": \"CURRENT_ACCOUNT\",\n  \"applicant\": {\n    \"firstName\": \"Nadia\",\n    \"lastName\": \"Idrissi\",\n    \"phone\": \"+212698765432\"\n  },\n  \"consents\": {\n    \"dataProcessing\": true,\n    \"marketing\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "- Channel `KIOSK`: self-service, **no token needed** (the prospect has\n  no account yet). `kioskId` is required and the ACCOUNT_OPENING\n  service must not be UNAVAILABLE on that kiosk (else `422`). The\n  response carries an `applicationToken`, to send as\n  `Authorization: Bearer <applicationToken>` on the next calls for\n  this application only.\n- Channel `BRANCH`: an AGENT or ADMIN token is required.\n\n**Sans authentification.**"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Get an application, with its KYC result and the opened account",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1001"
+              ]
+            },
+            "description": "Allowed with the application token, or for AGENT, SUPERVISOR, ADMIN, COMPLIANCE.\n\n**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Complete or correct a draft application (partial)",
+          "request": {
+            "method": "PATCH",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1001"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"applicant\": {\n    \"email\": \"salma.bennani@example.ma\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Only while `DRAFT` (else `409 APPLICATION_NOT_EDITABLE`). Fields of\n`applicant` are merged one level deep: `idDocument` and `address`\nare replaced as a whole. Changing `applicant.phone` resets\n`phoneVerified`. Allowed with the application token, or for AGENT, ADMIN.\n\n**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "List the KYC documents of an application (metadata only)",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1001/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1001",
+                "documents"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Upload a KYC document (ID scan, selfie, proof of address…)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1001/documents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1001",
+                "documents"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"PROOF_OF_INCOME\",\n  \"fileName\": \"bulletin-de-paie.pdf\",\n  \"mimeType\": \"application/pdf\",\n  \"contentBase64\": \"JVBERi0xLjQK\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Only while `DRAFT`. JPEG, PNG or PDF, 5 MB at most, sent in base64.\nUploading a type already present replaces it.\n\n**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Delete a KYC document (only while DRAFT)",
+          "request": {
+            "method": "DELETE",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1003/documents/DOC-1003-1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1003",
+                "documents",
+                "DOC-1003-1"
+              ]
+            },
+            "description": "**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 204\", function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Send a one-time code (OTP) by SMS to the applicant's phone",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1001/phone-verification",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1001",
+                "phone-verification"
+              ]
+            },
+            "description": "Only while `DRAFT`, and once `applicant.phone` is set (else\n`422 PHONE_MISSING`). The code is valid 10 minutes, 3 attempts.\nA new call sends a new code. The mock always sends `123456`.\n\n**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 202\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Confirm the phone with the code received by SMS",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1001/phone-verification/confirm",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1001",
+                "phone-verification",
+                "confirm"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "`422` with `OTP_NOT_REQUESTED`, `OTP_EXPIRED`, `OTP_INVALID` or\n`OTP_ATTEMPTS_EXCEEDED` (a new code must then be requested).\n\n**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Submit the application and run the KYC checks",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1001/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1001",
+                "submit"
+              ]
+            },
+            "description": "Only while `DRAFT`. `422 APPLICATION_INCOMPLETE` with `details` when\na required field or document is missing, the phone is not verified\nor the data processing consent is not given. Otherwise the KYC\nchecks run and decide the new status:\n- a check `FAIL` → `REJECTED`;\n- a check `REVIEW` or a `HIGH` risk → `UNDER_REVIEW` (compliance decides);\n- else → `APPROVED`, and the account is opened (`account`).\n\n**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Compliance decision on an application under review",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_compliance}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1002/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1002",
+                "decision"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"APPROVE\",\n  \"comment\": \"PEP : origine des fonds justifiée, validation du responsable conformité\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Role COMPLIANCE. Only while `UNDER_REVIEW` (else `409`). `APPROVE`\nopens the account; `REJECT` needs a `reasonCode`. The comment is\nmandatory (audit trail).\n\n**Rôle utilisé :** COMPLIANCE (variable `{{token_compliance}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "Cancel an application (DRAFT or UNDER_REVIEW)",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token_agent}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "X-Correlation-Id",
+                "value": "{{$guid}}",
+                "description": "Obligatoire : un UUID par action"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Mock-Scenario",
+                "value": "cbsDown",
+                "disabled": true,
+                "description": "Mock uniquement : force un scénario pour cette requête (ok, cbsDown, kmsDown, timeout, refused, unauthorized)"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/account-applications/APP-1003/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "account-applications",
+                "APP-1003",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Le client renonce\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Allowed with the application token, or for AGENT, ADMIN.\n\n**Rôle utilisé :** AGENT (variable `{{token_agent}}`)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5 · kms-kiosks",
       "description": "Kiosks (CRUD) and the services assigned to them",
       "item": [
         {
@@ -926,7 +1665,7 @@
       ]
     },
     {
-      "name": "5 · kms-devices",
+      "name": "6 · kms-devices",
       "description": "Devices of a kiosk, their status and status history",
       "item": [
         {
@@ -1436,7 +2175,7 @@
       ]
     },
     {
-      "name": "6 · kms-settings",
+      "name": "7 · kms-settings",
       "description": "Configuration – device catalogue, services, service/device requirements, deposit and withdrawal settings",
       "item": [
         {
@@ -2495,6 +3234,10 @@
     {
       "key": "token_admin",
       "value": "mock-token-U-ADMIN-1"
+    },
+    {
+      "key": "token_compliance",
+      "value": "mock-token-U-COMP-1"
     }
   ]
 }

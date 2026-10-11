@@ -25,7 +25,8 @@ export const deviceTypes: Schemas["DeviceType"][] = (
     ["CASH_DISPENSER", "Distributeur de billets", "CASH"],
     ["RECEIPT_PRINTER", "Imprimante de tickets", "PRINTER"],
     ["BARCODE_SCANNER", "Lecteur de code-barres", "INPUT"],
-    ["CAMERA", "Caméra de surveillance", "SENSOR"],
+    ["CAMERA", "Caméra (selfie, surveillance)", "SENSOR"],
+    ["ID_SCANNER", "Scanner de pièce d'identité", "INPUT"],
   ] as const
 ).map(([deviceTypeCode, name, category]) => ({ deviceTypeCode, name, category, createdAt: T0, updatedAt: T0 }));
 
@@ -57,6 +58,12 @@ export const services: Schemas["Service"][] = [
   service("HISTORY", "Historique des opérations", [
     ...core,
     { deviceTypeCode: "RECEIPT_PRINTER", requirement: "OPTIONAL" },
+  ]),
+  service("ACCOUNT_OPENING", "Ouverture de compte", [
+    { deviceTypeCode: "TOUCH_SCREEN", requirement: "MANDATORY" },
+    { deviceTypeCode: "ID_SCANNER", requirement: "MANDATORY" },
+    { deviceTypeCode: "CAMERA", requirement: "MANDATORY" },
+    { deviceTypeCode: "RECEIPT_PRINTER", requirement: "RECOMMENDED" },
   ]),
   service("STATEMENT", "Relevé de compte imprimé", [
     ...core,
@@ -123,7 +130,7 @@ const incidents: Record<string, Record<string, [DeviceStatus, string, string, st
 };
 
 const devicesByKiosk: Record<string, string[]> = {
-  "KIOSK-01": FULL_SET,
+  "KIOSK-01": [...FULL_SET, "CAMERA", "ID_SCANNER"],
   "KIOSK-02": FULL_SET,
   "KIOSK-03": ["CARD_READER", "PIN_PAD", "TOUCH_SCREEN", "CASH_ACCEPTOR"],
 };
@@ -172,6 +179,8 @@ export const kioskServices: KioskServiceRecord[] = [
     ["DEPOSIT", "WITHDRAWAL", "BALANCE", "HISTORY"].map((serviceCode) => ({ kioskId, serviceCode, enabled: true, assignedAt: T0 })),
   ),
   ...["DEPOSIT", "BALANCE"].map((serviceCode) => ({ kioskId: "KIOSK-03", serviceCode, enabled: true, assignedAt: T0 })),
+  // KIOSK-02 has no camera nor ID scanner: account opening is UNAVAILABLE there.
+  ...["KIOSK-01", "KIOSK-02"].map((kioskId) => ({ kioskId, serviceCode: "ACCOUNT_OPENING", enabled: true, assignedAt: T0 })),
 ];
 
 export const depositSettings: Schemas["DepositSettings"] = {

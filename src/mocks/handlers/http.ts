@@ -70,7 +70,7 @@ export async function precheck(request: Request, upstream: Upstream): Promise<Re
   return undefined;
 }
 
-function userFromToken(request: Request): MockUser | undefined {
+export function userFromToken(request: Request): MockUser | undefined {
   const token = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   return users.find((u) => tokenFor(u) === token);
 }
@@ -101,7 +101,7 @@ export async function guard(request: Request, upstream: Upstream, roles?: Role[]
 export const CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{1,31}$/;
 
 /** Fails to compile when `A` misses a value of the union `T`. */
-type CoversAll<T, A extends readonly T[]> = [Exclude<T, A[number]>] extends [never] ? true : never;
+export type CoversAll<T, A extends readonly T[]> = [Exclude<T, A[number]>] extends [never] ? true : never;
 
 export const KIOSK_STATUSES = ["ONLINE", "OFFLINE", "MAINTENANCE"] as const satisfies readonly Schemas["KioskStatus"][];
 export const KIOSK_HEALTHS = ["HEALTHY", "DEGRADED", "OUT_OF_SERVICE"] as const satisfies readonly Schemas["KioskHealth"][];

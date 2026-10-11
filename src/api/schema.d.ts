@@ -99,6 +99,214 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/account-applications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List account opening applications (back-office work queue)
+         * @description Back-office list, newest first. The compliance work queue is
+         *     `?status=UNDER_REVIEW`. Roles: AGENT, SUPERVISOR, ADMIN, COMPLIANCE.
+         */
+        get: operations["listAccountApplications"];
+        put?: never;
+        /**
+         * Start an account opening application (draft)
+         * @description - Channel `KIOSK`: self-service, **no token needed** (the prospect has
+         *       no account yet). `kioskId` is required and the ACCOUNT_OPENING
+         *       service must not be UNAVAILABLE on that kiosk (else `422`). The
+         *       response carries an `applicationToken`, to send as
+         *       `Authorization: Bearer <applicationToken>` on the next calls for
+         *       this application only.
+         *     - Channel `BRANCH`: an AGENT or ADMIN token is required.
+         */
+        post: operations["createAccountApplication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account-applications/{applicationId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an application, with its KYC result and the opened account
+         * @description Allowed with the application token, or for AGENT, SUPERVISOR, ADMIN, COMPLIANCE.
+         */
+        get: operations["getAccountApplication"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Complete or correct a draft application (partial)
+         * @description Only while `DRAFT` (else `409 APPLICATION_NOT_EDITABLE`). Fields of
+         *     `applicant` are merged one level deep: `idDocument` and `address`
+         *     are replaced as a whole. Changing `applicant.phone` resets
+         *     `phoneVerified`. Allowed with the application token, or for AGENT, ADMIN.
+         */
+        patch: operations["updateAccountApplication"];
+        trace?: never;
+    };
+    "/account-applications/{applicationId}/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the KYC documents of an application (metadata only) */
+        get: operations["listApplicationDocuments"];
+        put?: never;
+        /**
+         * Upload a KYC document (ID scan, selfie, proof of address…)
+         * @description Only while `DRAFT`. JPEG, PNG or PDF, 5 MB at most, sent in base64.
+         *     Uploading a type already present replaces it.
+         */
+        post: operations["uploadApplicationDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account-applications/{applicationId}/documents/{documentId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a KYC document (only while DRAFT) */
+        delete: operations["deleteApplicationDocument"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account-applications/{applicationId}/phone-verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a one-time code (OTP) by SMS to the applicant's phone
+         * @description Only while `DRAFT`, and once `applicant.phone` is set (else
+         *     `422 PHONE_MISSING`). The code is valid 10 minutes, 3 attempts.
+         *     A new call sends a new code. The mock always sends `123456`.
+         */
+        post: operations["startPhoneVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account-applications/{applicationId}/phone-verification/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm the phone with the code received by SMS
+         * @description `422` with `OTP_NOT_REQUESTED`, `OTP_EXPIRED`, `OTP_INVALID` or
+         *     `OTP_ATTEMPTS_EXCEEDED` (a new code must then be requested).
+         */
+        post: operations["confirmPhoneVerification"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account-applications/{applicationId}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit the application and run the KYC checks
+         * @description Only while `DRAFT`. `422 APPLICATION_INCOMPLETE` with `details` when
+         *     a required field or document is missing, the phone is not verified
+         *     or the data processing consent is not given. Otherwise the KYC
+         *     checks run and decide the new status:
+         *     - a check `FAIL` → `REJECTED`;
+         *     - a check `REVIEW` or a `HIGH` risk → `UNDER_REVIEW` (compliance decides);
+         *     - else → `APPROVED`, and the account is opened (`account`).
+         */
+        post: operations["submitAccountApplication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account-applications/{applicationId}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compliance decision on an application under review
+         * @description Role COMPLIANCE. Only while `UNDER_REVIEW` (else `409`). `APPROVE`
+         *     opens the account; `REJECT` needs a `reasonCode`. The comment is
+         *     mandatory (audit trail).
+         */
+        post: operations["decideAccountApplication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/account-applications/{applicationId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel an application (DRAFT or UNDER_REVIEW)
+         * @description Allowed with the application token, or for AGENT, ADMIN.
+         */
+        post: operations["cancelAccountApplication"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kms/kiosks": {
         parameters: {
             query?: never;
@@ -478,7 +686,7 @@ export interface components {
             roles: components["schemas"]["Role"][];
         };
         /** @enum {string} */
-        Role: "CUSTOMER" | "AGENT" | "SUPERVISOR" | "ADMIN";
+        Role: "CUSTOMER" | "AGENT" | "SUPERVISOR" | "ADMIN" | "COMPLIANCE";
         Money: {
             amount: number;
             /** @example MAD */
@@ -737,7 +945,7 @@ export interface components {
             description?: string;
             /** @description Global switch; when false the service is unavailable on every kiosk */
             enabled: boolean;
-            /** @description Built-in services (DEPOSIT, WITHDRAWAL, BALANCE, HISTORY) cannot be deleted */
+            /** @description Built-in services (DEPOSIT, WITHDRAWAL, BALANCE, HISTORY, ACCOUNT_OPENING) cannot be deleted */
             builtIn: boolean;
             deviceRequirements: components["schemas"]["ServiceDeviceRequirement"][];
             /** Format: date-time */
@@ -784,6 +992,230 @@ export interface components {
             /** @description Quick-pick amounts shown on the kiosk */
             presetAmounts: number[];
             receiptMode: components["schemas"]["ReceiptMode"];
+        };
+        /**
+         * @description `DRAFT` (being filled) → submit → `APPROVED` (account opened),
+         *     `UNDER_REVIEW` (compliance decides) or `REJECTED`. `CANCELLED` from
+         *     `DRAFT` or `UNDER_REVIEW`.
+         * @enum {string}
+         */
+        ApplicationStatus: "DRAFT" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "CANCELLED";
+        /**
+         * @description `KIOSK`: self-service with an application token. `BRANCH`: an agent in the portal.
+         * @enum {string}
+         */
+        ApplicationChannel: "KIOSK" | "BRANCH";
+        /** @enum {string} */
+        AccountProduct: "CURRENT_ACCOUNT" | "SAVINGS_ACCOUNT" | "BASIC_ACCOUNT";
+        /** @enum {string} */
+        RiskLevel: "LOW" | "MEDIUM" | "HIGH";
+        /** @enum {string} */
+        IdDocumentType: "CIN" | "PASSPORT" | "RESIDENCE_PERMIT";
+        /**
+         * @description Monthly income in MAD
+         * @enum {string}
+         */
+        IncomeRange: "UNDER_3000" | "FROM_3000_TO_10000" | "FROM_10000_TO_30000" | "OVER_30000";
+        /** @enum {string} */
+        SourceOfFunds: "SALARY" | "BUSINESS" | "PENSION" | "SAVINGS" | "FAMILY_SUPPORT" | "OTHER";
+        IdDocument: {
+            type?: components["schemas"]["IdDocumentType"];
+            number?: string;
+            /** Format: date */
+            issueDate?: string;
+            /** Format: date */
+            expiryDate?: string;
+        };
+        PostalAddress: {
+            line1?: string;
+            line2?: string;
+            city?: string;
+            postalCode?: string;
+            /** @description ISO 3166-1 alpha-2 */
+            country?: string;
+        };
+        /**
+         * @description Prospect identity and KYC questionnaire. Every field is optional
+         *     while the application is a draft; the required ones are checked on
+         *     submit (see `submitAccountApplication`).
+         */
+        Applicant: {
+            firstName?: string;
+            lastName?: string;
+            /** Format: date */
+            dateOfBirth?: string;
+            placeOfBirth?: string;
+            /** @description ISO 3166-1 alpha-2 */
+            nationality?: string;
+            idDocument?: components["schemas"]["IdDocument"];
+            /** @description E.164, e.g. +212612345678 */
+            phone?: string;
+            /** Format: email */
+            email?: string;
+            address?: components["schemas"]["PostalAddress"];
+            occupation?: string;
+            employerName?: string;
+            monthlyIncomeRange?: components["schemas"]["IncomeRange"];
+            sourceOfFunds?: components["schemas"]["SourceOfFunds"];
+            /** @description Self-declaration of politically exposed person (PEP) status */
+            isPoliticallyExposed?: boolean;
+            /** @description FATCA self-declaration (US citizen or tax resident) */
+            usPerson?: boolean;
+        };
+        /** @description Required by law 09-08 on personal data protection */
+        Consents: {
+            /** @description Consent to the processing of personal data; must be true to submit */
+            dataProcessing?: boolean;
+            marketing?: boolean;
+        };
+        AccountApplicationCreate: {
+            channel: components["schemas"]["ApplicationChannel"];
+            /** @description Required for the KIOSK channel */
+            kioskId?: components["schemas"]["Code"];
+            productCode: components["schemas"]["AccountProduct"];
+            applicant?: components["schemas"]["Applicant"];
+            consents?: components["schemas"]["Consents"];
+        };
+        AccountApplicationUpdate: {
+            productCode?: components["schemas"]["AccountProduct"];
+            applicant?: components["schemas"]["Applicant"];
+            consents?: components["schemas"]["Consents"];
+        };
+        /** @enum {string} */
+        ApplicationDocumentType: "ID_FRONT" | "ID_BACK" | "SELFIE" | "PROOF_OF_ADDRESS" | "PROOF_OF_INCOME";
+        /** @enum {string} */
+        DocumentMimeType: "image/jpeg" | "image/png" | "application/pdf";
+        ApplicationDocumentUpload: {
+            type: components["schemas"]["ApplicationDocumentType"];
+            fileName: string;
+            mimeType: components["schemas"]["DocumentMimeType"];
+            /** @description File content in base64, 5 MB at most once decoded */
+            contentBase64: string;
+        };
+        ApplicationDocument: {
+            documentId: string;
+            type: components["schemas"]["ApplicationDocumentType"];
+            fileName: string;
+            mimeType: components["schemas"]["DocumentMimeType"];
+            sizeBytes: number;
+            /** Format: date-time */
+            uploadedAt: string;
+        };
+        /** @enum {string} */
+        KycCheckCode: "ID_DOCUMENT_VALIDITY" | "AGE" | "FACE_MATCH" | "SANCTIONS_SCREENING" | "PEP_SCREENING" | "DUPLICATE_CUSTOMER" | "FATCA";
+        /**
+         * @description `PASS`; `REVIEW` (a compliance officer must decide); `FAIL` (the application is rejected)
+         * @enum {string}
+         */
+        KycCheckResult: "PASS" | "REVIEW" | "FAIL";
+        KycCheck: {
+            check: components["schemas"]["KycCheckCode"];
+            result: components["schemas"]["KycCheckResult"];
+            /**
+             * @example ID_EXPIRED
+             * @example UNDERAGE
+             * @example FACE_MISMATCH
+             * @example SANCTIONS_HIT
+             * @example PEP_DECLARED
+             * @example PEP_LIST_HIT
+             * @example EXISTING_CUSTOMER
+             * @example US_PERSON
+             */
+            reasonCode?: string;
+            message: string;
+        };
+        KycResult: {
+            checks: components["schemas"]["KycCheck"][];
+            /** @description `HIGH` for a PEP; `MEDIUM` for a non-resident nationality, a US person or funds of other origin; else `LOW` */
+            riskLevel: components["schemas"]["RiskLevel"];
+            /** @enum {string} */
+            outcome: "AUTO_APPROVED" | "MANUAL_REVIEW" | "AUTO_REJECTED";
+            /** Format: date-time */
+            evaluatedAt: string;
+        };
+        ApplicationDecisionRequest: {
+            /** @enum {string} */
+            decision: "APPROVE" | "REJECT";
+            /**
+             * @description Required to reject
+             * @example PEP_NOT_ACCEPTED
+             * @example INCONSISTENT_DOCUMENTS
+             * @example HIGH_RISK
+             */
+            reasonCode?: string;
+            comment: string;
+        };
+        ApplicationDecision: {
+            /** @enum {string} */
+            decision: "APPROVE" | "REJECT";
+            reasonCode?: string;
+            comment: string;
+            decidedBy: string;
+            /** Format: date-time */
+            decidedAt: string;
+        };
+        OpenedAccount: {
+            accountId: string;
+            /** @description Moroccan RIB, 24 digits */
+            rib: string;
+            productCode: components["schemas"]["AccountProduct"];
+            currency: string;
+            /** Format: date-time */
+            openedAt: string;
+        };
+        AccountApplication: {
+            applicationId: string;
+            status: components["schemas"]["ApplicationStatus"];
+            channel: components["schemas"]["ApplicationChannel"];
+            kioskId?: components["schemas"]["Code"];
+            productCode: components["schemas"]["AccountProduct"];
+            applicant: components["schemas"]["Applicant"];
+            consents?: components["schemas"]["Consents"];
+            phoneVerified: boolean;
+            documents: components["schemas"]["ApplicationDocument"][];
+            /** @description Set on submit */
+            kyc?: components["schemas"]["KycResult"];
+            /** @description Compliance decision, when the application went through manual review */
+            review?: components["schemas"]["ApplicationDecision"];
+            /** @description Set when the application is APPROVED */
+            account?: components["schemas"]["OpenedAccount"];
+            cancellation?: {
+                reason?: string;
+                /** Format: date-time */
+                cancelledAt: string;
+            };
+            /** @description User id of the agent, for the BRANCH channel */
+            createdBy?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            /** Format: date-time */
+            submittedAt?: string;
+            /**
+             * Format: date-time
+             * @description A draft not submitted by this date is purged (30 days)
+             */
+            expiresAt: string;
+        };
+        AccountApplicationCreated: components["schemas"]["AccountApplication"] & {
+            /** @description Bearer token giving access to this application only (KIOSK channel). Returned once. */
+            applicationToken: string;
+        };
+        AccountApplicationPage: {
+            items: components["schemas"]["AccountApplication"][];
+            /** @description Absent on the last page */
+            nextCursor?: string;
+        };
+        PhoneVerificationStarted: {
+            /** @example +2126******78 */
+            maskedPhone: string;
+            /** Format: date-time */
+            expiresAt: string;
+            attemptsAllowed: number;
+        };
+        PhoneVerificationConfirm: {
+            code: string;
         };
         Error: {
             /**
@@ -886,6 +1318,7 @@ export interface components {
         DeviceId: string;
         ServiceCode: components["schemas"]["Code"];
         DeviceTypeCode: components["schemas"]["Code"];
+        ApplicationId: string;
         Limit: number;
         /** @description Opaque cursor returned as `nextCursor` by the previous page */
         Cursor: string;
@@ -1067,6 +1500,429 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Refused"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listAccountApplications: {
+        parameters: {
+            query?: {
+                status?: components["schemas"]["ApplicationStatus"];
+                channel?: components["schemas"]["ApplicationChannel"];
+                riskLevel?: components["schemas"]["RiskLevel"];
+                limit?: components["parameters"]["Limit"];
+                /** @description Opaque cursor returned as `nextCursor` by the previous page */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One page of applications */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountApplicationPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    createAccountApplication: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountApplicationCreate"];
+            };
+        };
+        responses: {
+            /** @description Draft created */
+            201: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountApplicationCreated"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Refused"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    getAccountApplication: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Application */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountApplication"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    updateAccountApplication: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountApplicationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Application updated */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountApplication"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    listApplicationDocuments: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Documents */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ApplicationDocument"][];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    uploadApplicationDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationDocumentUpload"];
+            };
+        };
+        responses: {
+            /** @description Document stored */
+            201: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationDocument"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    deleteApplicationDocument: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    startPhoneVerification: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Code sent */
+            202: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PhoneVerificationStarted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Refused"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    confirmPhoneVerification: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PhoneVerificationConfirm"];
+            };
+        };
+        responses: {
+            /** @description Phone verified */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountApplication"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Refused"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    submitAccountApplication: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Application with its KYC result and new status */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountApplication"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Refused"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    decideAccountApplication: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Application decided */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountApplication"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
+            504: components["responses"]["Timeout"];
+        };
+    };
+    cancelAccountApplication: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Generated by the front-end per user action, propagated end to end */
+                "X-Correlation-Id": components["parameters"]["CorrelationId"];
+            };
+            path: {
+                applicationId: components["parameters"]["ApplicationId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    reason?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Application cancelled */
+            200: {
+                headers: {
+                    "X-Correlation-Id": components["headers"]["CorrelationId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountApplication"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
             503: components["responses"]["ServiceUnavailable"];
             504: components["responses"]["Timeout"];
         };

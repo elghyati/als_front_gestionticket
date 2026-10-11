@@ -25,7 +25,7 @@ const ASSETS: Record<string, string> = {
 };
 
 const TOKENS = Object.fromEntries(
-  (["CUSTOMER", "AGENT", "SUPERVISOR", "ADMIN"] as const).map((role) => [
+  (["CUSTOMER", "AGENT", "SUPERVISOR", "ADMIN", "COMPLIANCE"] as const).map((role) => [
     role,
     tokenFor(users.find((u) => u.roles.includes(role))!),
   ]),

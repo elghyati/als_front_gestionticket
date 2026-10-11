@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildCollection, COLLECTION_FILE, environments } from "../scripts/postman";
+import { samples } from "../src/mocks/samples";
 import { resetMockState } from "../src/mocks/state";
 import { BASE_URL } from "./helpers";
 
@@ -43,7 +44,7 @@ describe("Postman collection", () => {
 
     resetMockState();
     const requests = collection.item.flatMap((folder) => folder.item).filter((r) => r.request.url.host[0] === "{{baseUrl}}");
-    expect(requests).toHaveLength(38);
+    expect(requests).toHaveLength(Object.keys(samples).length);
 
     for (const { name, request, event } of requests) {
       const expected = Number(event?.[0]?.script.exec.join("\n").match(/have\.status\((\d+)\)/)?.[1]);

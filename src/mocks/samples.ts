@@ -53,6 +53,54 @@ export const samples: Record<string, Sample> = {
     body: { accountId: "ACC-001", kioskId: "KIOSK-01", amount: { amount: 500, currency: "MAD" } },
   },
 
+  listAccountApplications: { path: "/account-applications?status=UNDER_REVIEW", as: "COMPLIANCE" },
+  createAccountApplication: {
+    path: "/account-applications",
+    method: "POST",
+    body: {
+      channel: "KIOSK",
+      kioskId: "KIOSK-01",
+      productCode: "CURRENT_ACCOUNT",
+      applicant: { firstName: "Nadia", lastName: "Idrissi", phone: "+212698765432" },
+      consents: { dataProcessing: true, marketing: false },
+    },
+  },
+  getAccountApplication: { path: "/account-applications/APP-1001", as: "AGENT" },
+  updateAccountApplication: {
+    path: "/account-applications/APP-1001",
+    method: "PATCH",
+    as: "AGENT",
+    body: { applicant: { email: "salma.bennani@example.ma" } },
+  },
+  listApplicationDocuments: { path: "/account-applications/APP-1001/documents", as: "AGENT" },
+  uploadApplicationDocument: {
+    path: "/account-applications/APP-1001/documents",
+    method: "POST",
+    as: "AGENT",
+    body: { type: "PROOF_OF_INCOME", fileName: "bulletin-de-paie.pdf", mimeType: "application/pdf", contentBase64: "JVBERi0xLjQK" },
+  },
+  deleteApplicationDocument: { path: "/account-applications/APP-1003/documents/DOC-1003-1", method: "DELETE", as: "AGENT" },
+  startPhoneVerification: { path: "/account-applications/APP-1001/phone-verification", method: "POST", as: "AGENT" },
+  confirmPhoneVerification: {
+    path: "/account-applications/APP-1001/phone-verification/confirm",
+    method: "POST",
+    as: "AGENT",
+    body: { code: "123456" },
+  },
+  submitAccountApplication: { path: "/account-applications/APP-1001/submit", method: "POST", as: "AGENT" },
+  decideAccountApplication: {
+    path: "/account-applications/APP-1002/decision",
+    method: "POST",
+    as: "COMPLIANCE",
+    body: { decision: "APPROVE", comment: "PEP : origine des fonds justifiée, validation du responsable conformité" },
+  },
+  cancelAccountApplication: {
+    path: "/account-applications/APP-1003/cancel",
+    method: "POST",
+    as: "AGENT",
+    body: { reason: "Le client renonce" },
+  },
+
   listKiosks: { path: "/kms/kiosks?health=DEGRADED", as: "AGENT" },
   createKiosk: {
     path: "/kms/kiosks",

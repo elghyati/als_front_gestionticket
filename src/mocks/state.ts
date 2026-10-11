@@ -1,5 +1,6 @@
 import type { Schemas } from "../api/client";
 import * as fx from "./fixtures";
+import { evaluateKyc } from "./kyc/rules";
 
 /** Mutable mock state. Handlers change it; `resetMockState()` restores the fixtures. */
 export interface MockState {
@@ -14,12 +15,40 @@ export interface MockState {
   deviceTypes: Map<string, Schemas["DeviceType"]>;
   services: Map<string, Schemas["Service"]>;
   depositSettings: Schemas["DepositSettings"];
+  /** Account opening applications by id. */
+  applications: Map<string, Schemas["AccountApplication"]>;
+  /** Application token → applicationId (KIOSK channel). */
+  applicationTokens: Map<string, string>;
+  /** Pending SMS codes by applicationId. */
+  otps: Map<string, PendingOtp>;
+  /** ID document numbers of customers (existing ones and accounts opened since). */
+  customerIdNumbers: Set<string>;
   withdrawalSettings: Schemas["WithdrawalSettings"];
-  /** Sequence for generated ids (devices, status changes). */
+  /** Sequence for generated ids. Starts above every demo id (TX-1024, APP-1004…) so they never collide. */
   seq: number;
 }
 
+export interface PendingOtp {
+  code: string;
+  expiresAt: number;
+  attemptsLeft: number;
+}
+
+export const OTP_TTL_MS = 10 * 60_000;
+export const OTP_ATTEMPTS = 3;
+
 const clone = <T>(value: T): T => structuredClone(value);
+
+function seedApplications(): Map<string, Schemas["AccountApplication"]> {
+  const existingCustomerIds = new Set(fx.EXISTING_CUSTOMER_ID_NUMBERS);
+  return new Map(
+    fx.applications.map(({ application }) => {
+      const app = clone(application);
+      if (app.submittedAt) app.kyc = evaluateKyc(app, { today: new Date(app.submittedAt), existingCustomerIds });
+      return [app.applicationId, app];
+    }),
+  );
+}
 
 export const state = {} as MockState;
 
@@ -36,7 +65,20 @@ export function resetMockState(): void {
     services: new Map(fx.services.map((s) => [s.serviceCode, clone(s)])),
     depositSettings: clone(fx.depositSettings),
     withdrawalSettings: clone(fx.withdrawalSettings),
-    seq: 1000,
+    applications: seedApplications(),
+    applicationTokens: new Map(
+      fx.applications.flatMap(({ application, token }) => (token ? [[token, application.applicationId] as const] : [])),
+    ),
+    otps: new Map(
+      fx.applications
+        .filter((f) => f.otpPending)
+        .map((f) => [
+          f.application.applicationId,
+          { code: fx.MOCK_OTP_CODE, expiresAt: Date.now() + OTP_TTL_MS, attemptsLeft: OTP_ATTEMPTS },
+        ]),
+    ),
+    customerIdNumbers: new Set(fx.EXISTING_CUSTOMER_ID_NUMBERS),
+    seq: 5000,
   } satisfies MockState);
 }
 

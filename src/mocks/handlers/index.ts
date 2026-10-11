@@ -1,4 +1,5 @@
 import { accountHandlers } from "./accounts";
+import { applicationHandlers } from "./applications";
 import { authHandlers } from "./auth";
 import { deviceHandlers } from "./devices";
 import { kioskHandlers } from "./kiosks";
@@ -9,6 +10,7 @@ export const handlers = [
   ...authHandlers,
   ...accountHandlers,
   ...transactionHandlers,
+  ...applicationHandlers,
   ...kioskHandlers,
   ...deviceHandlers,
   ...settingsHandlers,

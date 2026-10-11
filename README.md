@@ -20,6 +20,7 @@ npm run check      # lint du contrat, typecheck, tests
 | Authentification | `POST /auth/login` (kiosque : carte + PIN ; portail : identifiant + mot de passe) |
 | Comptes | Solde, historique paginé |
 | Opérations | `POST /deposits`, `POST /withdrawals` : elles appliquent les paramètres du service et vérifient que le service est disponible sur le kiosque |
+| **Ouverture de compte (KYC)** | `/account-applications` : dossier en libre-service sur kiosque (token d'application) ou en agence, pièces (CIN, selfie, justificatifs), vérification du téléphone par SMS, consentement (loi 09-08), 7 contrôles KYC automatiques, score de risque, décision de la conformité, ouverture du compte avec RIB |
 | **KMS – kiosques** | CRUD `/kms/kiosks`, état de santé calculé, services affectés avec leur disponibilité calculée |
 | **KMS – périphériques** | CRUD `/kms/kiosks/{id}/devices`, changement de statut, historique des statuts (par périphérique ou par kiosque) |
 | **KMS – paramétrage** | Catalogue global des types de périphériques, services (CRUD), relations service ↔ type de périphérique avec un niveau d'exigence, paramètres des services dépôt et retrait |
@@ -54,6 +55,8 @@ L'état de santé du kiosque en découle :
 | Changement de statut d'un périphérique | SUPERVISOR, ADMIN |
 | Création, modification, suppression ; affectations ; exigences ; paramètres | ADMIN |
 | Services d'un kiosque, paramètres dépôt et retrait (lecture) | Tout utilisateur connecté (l'application kiosque en a besoin) |
+| Ouverture de compte : créer, compléter, soumettre un dossier | Le prospect avec son token d'application (kiosque), ou AGENT et ADMIN (agence) |
+| Ouverture de compte : décider d'un dossier en revue | **COMPLIANCE uniquement** |
 
 ## Organisation
 
@@ -65,6 +68,7 @@ L'état de santé du kiosque en découle :
 | `src/mocks/fixtures/` | Données d'exemple : utilisateurs, comptes, kiosques, périphériques, historique, services, paramètres |
 | `src/mocks/state.ts` | État en mémoire du mock, modifié par les appels ; `resetMockState()` le réinitialise |
 | `src/mocks/kms/availability.ts` | Règles de disponibilité des services et de santé des kiosques |
+| `src/mocks/kyc/rules.ts` | Règles de l'ouverture de compte : complétude, contrôles KYC, niveau de risque, décision, RIB |
 | `src/mocks/handlers/` | Handlers MSW, un fichier par domaine (`auth`, `accounts`, `transactions`, `kiosks`, `devices`, `settings`) |
 | `src/mocks/scenarios.ts` | Interrupteurs de scénario |
 | `src/mocks/samples.ts` | Un exemple de requête valide par opération : utilisé par les tests de contrat, Swagger et Postman |
@@ -78,6 +82,8 @@ L'état de santé du kiosque en découle :
 | `tests/postman.test.ts` | Vérifie que la collection Postman est à jour et que chacune de ses requêtes fonctionne |
 | `docs/api/ENDPOINTS.md` | **Guide fonctionnel des 38 endpoints** |
 | `docs/api/FLOWS.md` | **Schémas des enchaînements** (Mermaid, affichés par GitHub) |
+| `docs/api/diagrams/` | **Les mêmes schémas en images SVG et PNG**, à ouvrir ou insérer dans Word et PowerPoint |
+| `scripts/render-diagrams.ts` | Régénère `docs/api/diagrams/` à partir de `FLOWS.md` |
 | `docs/api/DECISIONS.md` | Décisions, questions ouvertes, risques |
 
 ## Scripts
@@ -89,6 +95,7 @@ L'état de santé du kiosque en découle :
 | `npm run api:docs` | Génère la documentation HTML dans `docs/api/index.html` |
 | `npm run mock:server` | **Lance le mock MSW comme un vrai serveur** sur `http://localhost:4000/api/v1`, avec **Swagger UI** sur `http://localhost:4000/docs` : mêmes données, même logique et mêmes scénarios que les tests (voir ci-dessous) |
 | `npm run postman:build` | Régénère la collection Postman (`postman/`) après une modification du contrat ou des exemples |
+| `npm run docs:diagrams` | Régénère les images des schémas (`docs/api/diagrams/*.svg` et `*.png`) après une modification de `FLOWS.md`. Le premier lancement télécharge mermaid-cli et un navigateur (quelques minutes) |
 | `npm run mock:prism` | Lance un mock Prism sur `http://localhost:4010`, sans le préfixe `/api/v1` (utile pour curl, Postman ou l'équipe back-end ; réponses générées, sans état) |
 | `npm test` | Tests de contrat et de comportement |
 | `npm run check` | Les trois vérifications ci-dessus (lint, typecheck, tests) |
@@ -133,6 +140,7 @@ if (import.meta.env.DEV) {
 | Portail | `agent` / `agent` | AGENT |
 | Portail | `superviseur` / `superviseur` | SUPERVISOR |
 | Portail | `admin` / `admin` | ADMIN |
+| Portail | `conformite` / `conformite` | COMPLIANCE |
 
 **Kiosques**
 
@@ -143,6 +151,17 @@ if (import.meta.env.DEV) {
 | `KIOSK-03` (Marrakech) | OFFLINE | OUT_OF_SERVICE | Périphériques OFFLINE, pas de distributeur. Services : dépôt, solde |
 
 Identifiants des périphériques : `DEV-<kiosque><n°>`, par exemple `DEV-0204` pour l'accepteur de billets de `KIOSK-02`.
+
+**Demandes d'ouverture de compte**
+
+| Dossier | Situation |
+|---|---|
+| `APP-1001` | Brouillon complet sur `KIOSK-01` (Salma Bennani) ; il ne reste qu'à vérifier le téléphone (code `123456`), puis à soumettre → `APPROVED`. Token : `app-token-APP-1001` |
+| `APP-1002` | `UNDER_REVIEW` : PEP déclarée, risque `HIGH`, en attente de la conformité |
+| `APP-1003` | Brouillon à peine commencé en agence |
+| `APP-1004` | `REJECTED` : nom sur une liste de sanctions |
+
+Données de test KYC : nom `Sanction` → rejet ; nom `Pep` ou `isPoliticallyExposed: true` → revue ; selfie dont le nom de fichier contient `mismatch` → rejet ; pièce n° `BK123456` → client existant, revue ; `usPerson: true` → revue FATCA ; pièce expirée ou moins de 18 ans → rejet. Le code SMS est toujours `123456`.
 
 **Paramètres**
 - Dépôt : 50 à 20 000 MAD par opération, 50 000 MAD par jour, billets de 20, 50, 100 et 200, 200 billets au maximum.

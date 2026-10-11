@@ -37,7 +37,7 @@ describe("kiosks", () => {
       "KIOSK-02": "DEGRADED",
       "KIOSK-03": "OUT_OF_SERVICE",
     });
-    expect(data!.items.find((k) => k.kioskId === "KIOSK-01")?.deviceCount).toBe(6);
+    expect(data!.items.find((k) => k.kioskId === "KIOSK-01")?.deviceCount).toBe(8);
   });
 
   it("filters by status, health, city and free text", async () => {

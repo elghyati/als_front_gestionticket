@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ALS Front – MVP API contract
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Contract between the MVP front-end (kiosk and portal) and the back-end
     services (Agent, KMS-Supervision, KMS-Routeur), which are not ready yet.
@@ -29,6 +29,11 @@ info:
     | Create / update / delete, assignments, requirements, settings | ADMIN |
     | Read the services of a kiosk, read deposit and withdrawal settings | any authenticated user (the kiosk app needs them) |
 
+    Account opening access: the prospect with the application token (KIOSK
+    channel); AGENT and ADMIN to create and complete an application at the
+    branch; AGENT, SUPERVISOR, ADMIN and COMPLIANCE to read; **COMPLIANCE
+    only** to decide on an application under review.
+
     Service availability on a kiosk (computed, see `KioskService`):
     a device is *usable* when its status is `OPERATIONAL` or `WARNING`.
     For each device type the service requires, if the kiosk has no usable
@@ -54,6 +59,8 @@ tags:
     description: Balance and history
   - name: transactions
     description: Deposit and withdrawal operations
+  - name: account-opening
+    description: Account opening with KYC – application, documents, phone verification, automatic checks, compliance decision
   - name: kms-kiosks
     description: Kiosks (CRUD) and the services assigned to them
   - name: kms-devices
@@ -231,6 +238,495 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '422':
           $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  # ──────────────── account opening (KYC) ────────────────
+  /account-applications:
+    get:
+      tags: [account-opening]
+      operationId: listAccountApplications
+      summary: List account opening applications (back-office work queue)
+      description: |
+        Back-office list, newest first. The compliance work queue is
+        `?status=UNDER_REVIEW`. Roles: AGENT, SUPERVISOR, ADMIN, COMPLIANCE.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ApplicationStatus'
+        - name: channel
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/ApplicationChannel'
+        - name: riskLevel
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/RiskLevel'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: One page of applications
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApplicationPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    post:
+      tags: [account-opening]
+      operationId: createAccountApplication
+      summary: Start an account opening application (draft)
+      description: |
+        - Channel `KIOSK`: self-service, **no token needed** (the prospect has
+          no account yet). `kioskId` is required and the ACCOUNT_OPENING
+          service must not be UNAVAILABLE on that kiosk (else `422`). The
+          response carries an `applicationToken`, to send as
+          `Authorization: Bearer <applicationToken>` on the next calls for
+          this application only.
+        - Channel `BRANCH`: an AGENT or ADMIN token is required.
+      security:
+        - {}
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountApplicationCreate'
+      responses:
+        '201':
+          description: Draft created
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApplicationCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /account-applications/{applicationId}:
+    get:
+      tags: [account-opening]
+      operationId: getAccountApplication
+      summary: Get an application, with its KYC result and the opened account
+      description: Allowed with the application token, or for AGENT, SUPERVISOR, ADMIN, COMPLIANCE.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Application
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    patch:
+      tags: [account-opening]
+      operationId: updateAccountApplication
+      summary: Complete or correct a draft application (partial)
+      description: |
+        Only while `DRAFT` (else `409 APPLICATION_NOT_EDITABLE`). Fields of
+        `applicant` are merged one level deep: `idDocument` and `address`
+        are replaced as a whole. Changing `applicant.phone` resets
+        `phoneVerified`. Allowed with the application token, or for AGENT, ADMIN.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccountApplicationUpdate'
+      responses:
+        '200':
+          description: Application updated
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /account-applications/{applicationId}/documents:
+    get:
+      tags: [account-opening]
+      operationId: listApplicationDocuments
+      summary: List the KYC documents of an application (metadata only)
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Documents
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApplicationDocument'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+    post:
+      tags: [account-opening]
+      operationId: uploadApplicationDocument
+      summary: Upload a KYC document (ID scan, selfie, proof of address…)
+      description: |
+        Only while `DRAFT`. JPEG, PNG or PDF, 5 MB at most, sent in base64.
+        Uploading a type already present replaces it.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationDocumentUpload'
+      responses:
+        '201':
+          description: Document stored
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationDocument'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /account-applications/{applicationId}/documents/{documentId}:
+    delete:
+      tags: [account-opening]
+      operationId: deleteApplicationDocument
+      summary: Delete a KYC document (only while DRAFT)
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Document deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /account-applications/{applicationId}/phone-verification:
+    post:
+      tags: [account-opening]
+      operationId: startPhoneVerification
+      summary: Send a one-time code (OTP) by SMS to the applicant's phone
+      description: |
+        Only while `DRAFT`, and once `applicant.phone` is set (else
+        `422 PHONE_MISSING`). The code is valid 10 minutes, 3 attempts.
+        A new call sends a new code. The mock always sends `123456`.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '202':
+          description: Code sent
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PhoneVerificationStarted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /account-applications/{applicationId}/phone-verification/confirm:
+    post:
+      tags: [account-opening]
+      operationId: confirmPhoneVerification
+      summary: Confirm the phone with the code received by SMS
+      description: |
+        `422` with `OTP_NOT_REQUESTED`, `OTP_EXPIRED`, `OTP_INVALID` or
+        `OTP_ATTEMPTS_EXCEEDED` (a new code must then be requested).
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PhoneVerificationConfirm'
+      responses:
+        '200':
+          description: Phone verified
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /account-applications/{applicationId}/submit:
+    post:
+      tags: [account-opening]
+      operationId: submitAccountApplication
+      summary: Submit the application and run the KYC checks
+      description: |
+        Only while `DRAFT`. `422 APPLICATION_INCOMPLETE` with `details` when
+        a required field or document is missing, the phone is not verified
+        or the data processing consent is not given. Otherwise the KYC
+        checks run and decide the new status:
+        - a check `FAIL` → `REJECTED`;
+        - a check `REVIEW` or a `HIGH` risk → `UNDER_REVIEW` (compliance decides);
+        - else → `APPROVED`, and the account is opened (`account`).
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      responses:
+        '200':
+          description: Application with its KYC result and new status
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /account-applications/{applicationId}/decision:
+    post:
+      tags: [account-opening]
+      operationId: decideAccountApplication
+      summary: Compliance decision on an application under review
+      description: |
+        Role COMPLIANCE. Only while `UNDER_REVIEW` (else `409`). `APPROVE`
+        opens the account; `REJECT` needs a `reasonCode`. The comment is
+        mandatory (audit trail).
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplicationDecisionRequest'
+      responses:
+        '200':
+          description: Application decided
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+
+  /account-applications/{applicationId}/cancel:
+    post:
+      tags: [account-opening]
+      operationId: cancelAccountApplication
+      summary: Cancel an application (DRAFT or UNDER_REVIEW)
+      description: Allowed with the application token, or for AGENT, ADMIN.
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ApplicationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Application cancelled
+          headers:
+            X-Correlation-Id:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountApplication'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
         '504':
@@ -1415,6 +1911,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Code'
+    ApplicationId:
+      name: applicationId
+      in: path
+      required: true
+      schema:
+        type: string
     Limit:
       name: limit
       in: query
@@ -1526,7 +2028,7 @@ components:
             $ref: '#/components/schemas/Role'
     Role:
       type: string
-      enum: [CUSTOMER, AGENT, SUPERVISOR, ADMIN]
+      enum: [CUSTOMER, AGENT, SUPERVISOR, ADMIN, COMPLIANCE]
 
     # ─────────────── money and transactions ───────────────
     Money:
@@ -2000,7 +2502,7 @@ components:
           description: Global switch; when false the service is unavailable on every kiosk
           type: boolean
         builtIn:
-          description: Built-in services (DEPOSIT, WITHDRAWAL, BALANCE, HISTORY) cannot be deleted
+          description: Built-in services (DEPOSIT, WITHDRAWAL, BALANCE, HISTORY, ACCOUNT_OPENING) cannot be deleted
           type: boolean
         deviceRequirements:
           type: array
@@ -2117,6 +2619,380 @@ components:
             exclusiveMinimum: 0
         receiptMode:
           $ref: '#/components/schemas/ReceiptMode'
+
+    # ─────────────── account opening (KYC) ───────────────
+    ApplicationStatus:
+      description: |
+        `DRAFT` (being filled) → submit → `APPROVED` (account opened),
+        `UNDER_REVIEW` (compliance decides) or `REJECTED`. `CANCELLED` from
+        `DRAFT` or `UNDER_REVIEW`.
+      type: string
+      enum: [DRAFT, UNDER_REVIEW, APPROVED, REJECTED, CANCELLED]
+    ApplicationChannel:
+      description: '`KIOSK`: self-service with an application token. `BRANCH`: an agent in the portal.'
+      type: string
+      enum: [KIOSK, BRANCH]
+    AccountProduct:
+      type: string
+      enum: [CURRENT_ACCOUNT, SAVINGS_ACCOUNT, BASIC_ACCOUNT]
+    RiskLevel:
+      type: string
+      enum: [LOW, MEDIUM, HIGH]
+    IdDocumentType:
+      type: string
+      enum: [CIN, PASSPORT, RESIDENCE_PERMIT]
+    IncomeRange:
+      description: Monthly income in MAD
+      type: string
+      enum: [UNDER_3000, FROM_3000_TO_10000, FROM_10000_TO_30000, OVER_30000]
+    SourceOfFunds:
+      type: string
+      enum: [SALARY, BUSINESS, PENSION, SAVINGS, FAMILY_SUPPORT, OTHER]
+    IdDocument:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          $ref: '#/components/schemas/IdDocumentType'
+        number:
+          type: string
+          minLength: 4
+        issueDate:
+          type: string
+          format: date
+        expiryDate:
+          type: string
+          format: date
+    PostalAddress:
+      type: object
+      additionalProperties: false
+      properties:
+        line1:
+          type: string
+        line2:
+          type: string
+        city:
+          type: string
+        postalCode:
+          type: string
+        country:
+          description: ISO 3166-1 alpha-2
+          type: string
+          pattern: '^[A-Z]{2}$'
+    Applicant:
+      description: |
+        Prospect identity and KYC questionnaire. Every field is optional
+        while the application is a draft; the required ones are checked on
+        submit (see `submitAccountApplication`).
+      type: object
+      additionalProperties: false
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        dateOfBirth:
+          type: string
+          format: date
+        placeOfBirth:
+          type: string
+        nationality:
+          description: ISO 3166-1 alpha-2
+          type: string
+          pattern: '^[A-Z]{2}$'
+        idDocument:
+          $ref: '#/components/schemas/IdDocument'
+        phone:
+          description: E.164, e.g. +212612345678
+          type: string
+          pattern: '^\+[1-9][0-9]{7,14}$'
+        email:
+          type: string
+          format: email
+        address:
+          $ref: '#/components/schemas/PostalAddress'
+        occupation:
+          type: string
+        employerName:
+          type: string
+        monthlyIncomeRange:
+          $ref: '#/components/schemas/IncomeRange'
+        sourceOfFunds:
+          $ref: '#/components/schemas/SourceOfFunds'
+        isPoliticallyExposed:
+          description: Self-declaration of politically exposed person (PEP) status
+          type: boolean
+        usPerson:
+          description: FATCA self-declaration (US citizen or tax resident)
+          type: boolean
+    Consents:
+      description: Required by law 09-08 on personal data protection
+      type: object
+      additionalProperties: false
+      properties:
+        dataProcessing:
+          description: Consent to the processing of personal data; must be true to submit
+          type: boolean
+        marketing:
+          type: boolean
+    AccountApplicationCreate:
+      type: object
+      required: [channel, productCode]
+      additionalProperties: false
+      properties:
+        channel:
+          $ref: '#/components/schemas/ApplicationChannel'
+        kioskId:
+          description: Required for the KIOSK channel
+          allOf:
+            - $ref: '#/components/schemas/Code'
+        productCode:
+          $ref: '#/components/schemas/AccountProduct'
+        applicant:
+          $ref: '#/components/schemas/Applicant'
+        consents:
+          $ref: '#/components/schemas/Consents'
+    AccountApplicationUpdate:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        productCode:
+          $ref: '#/components/schemas/AccountProduct'
+        applicant:
+          $ref: '#/components/schemas/Applicant'
+        consents:
+          $ref: '#/components/schemas/Consents'
+    ApplicationDocumentType:
+      type: string
+      enum: [ID_FRONT, ID_BACK, SELFIE, PROOF_OF_ADDRESS, PROOF_OF_INCOME]
+    DocumentMimeType:
+      type: string
+      enum: [image/jpeg, image/png, application/pdf]
+    ApplicationDocumentUpload:
+      type: object
+      required: [type, fileName, mimeType, contentBase64]
+      additionalProperties: false
+      properties:
+        type:
+          $ref: '#/components/schemas/ApplicationDocumentType'
+        fileName:
+          type: string
+          minLength: 1
+        mimeType:
+          $ref: '#/components/schemas/DocumentMimeType'
+        contentBase64:
+          description: File content in base64, 5 MB at most once decoded
+          type: string
+          contentEncoding: base64
+          minLength: 4
+    ApplicationDocument:
+      type: object
+      required: [documentId, type, fileName, mimeType, sizeBytes, uploadedAt]
+      properties:
+        documentId:
+          type: string
+        type:
+          $ref: '#/components/schemas/ApplicationDocumentType'
+        fileName:
+          type: string
+        mimeType:
+          $ref: '#/components/schemas/DocumentMimeType'
+        sizeBytes:
+          type: integer
+          minimum: 1
+        uploadedAt:
+          type: string
+          format: date-time
+    KycCheckCode:
+      type: string
+      enum: [ID_DOCUMENT_VALIDITY, AGE, FACE_MATCH, SANCTIONS_SCREENING, PEP_SCREENING, DUPLICATE_CUSTOMER, FATCA]
+    KycCheckResult:
+      description: '`PASS`; `REVIEW` (a compliance officer must decide); `FAIL` (the application is rejected)'
+      type: string
+      enum: [PASS, REVIEW, FAIL]
+    KycCheck:
+      type: object
+      required: [check, result, message]
+      properties:
+        check:
+          $ref: '#/components/schemas/KycCheckCode'
+        result:
+          $ref: '#/components/schemas/KycCheckResult'
+        reasonCode:
+          type: string
+          examples: [ID_EXPIRED, UNDERAGE, FACE_MISMATCH, SANCTIONS_HIT, PEP_DECLARED, PEP_LIST_HIT, EXISTING_CUSTOMER, US_PERSON]
+        message:
+          type: string
+    KycResult:
+      type: object
+      required: [checks, riskLevel, outcome, evaluatedAt]
+      properties:
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/KycCheck'
+        riskLevel:
+          description: '`HIGH` for a PEP; `MEDIUM` for a non-resident nationality, a US person or funds of other origin; else `LOW`'
+          allOf:
+            - $ref: '#/components/schemas/RiskLevel'
+        outcome:
+          type: string
+          enum: [AUTO_APPROVED, MANUAL_REVIEW, AUTO_REJECTED]
+        evaluatedAt:
+          type: string
+          format: date-time
+    ApplicationDecisionRequest:
+      type: object
+      required: [decision, comment]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT]
+        reasonCode:
+          description: Required to reject
+          type: string
+          examples: [PEP_NOT_ACCEPTED, INCONSISTENT_DOCUMENTS, HIGH_RISK]
+        comment:
+          type: string
+          minLength: 1
+    ApplicationDecision:
+      type: object
+      required: [decision, comment, decidedBy, decidedAt]
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT]
+        reasonCode:
+          type: string
+        comment:
+          type: string
+        decidedBy:
+          type: string
+        decidedAt:
+          type: string
+          format: date-time
+    OpenedAccount:
+      type: object
+      required: [accountId, rib, productCode, currency, openedAt]
+      properties:
+        accountId:
+          type: string
+        rib:
+          description: Moroccan RIB, 24 digits
+          type: string
+          pattern: '^[0-9]{24}$'
+        productCode:
+          $ref: '#/components/schemas/AccountProduct'
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        openedAt:
+          type: string
+          format: date-time
+    AccountApplication:
+      type: object
+      required: [applicationId, status, channel, productCode, applicant, phoneVerified, documents, createdAt, updatedAt, expiresAt]
+      properties:
+        applicationId:
+          type: string
+        status:
+          $ref: '#/components/schemas/ApplicationStatus'
+        channel:
+          $ref: '#/components/schemas/ApplicationChannel'
+        kioskId:
+          $ref: '#/components/schemas/Code'
+        productCode:
+          $ref: '#/components/schemas/AccountProduct'
+        applicant:
+          $ref: '#/components/schemas/Applicant'
+        consents:
+          $ref: '#/components/schemas/Consents'
+        phoneVerified:
+          type: boolean
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApplicationDocument'
+        kyc:
+          description: Set on submit
+          allOf:
+            - $ref: '#/components/schemas/KycResult'
+        review:
+          description: Compliance decision, when the application went through manual review
+          allOf:
+            - $ref: '#/components/schemas/ApplicationDecision'
+        account:
+          description: Set when the application is APPROVED
+          allOf:
+            - $ref: '#/components/schemas/OpenedAccount'
+        cancellation:
+          type: object
+          required: [cancelledAt]
+          properties:
+            reason:
+              type: string
+            cancelledAt:
+              type: string
+              format: date-time
+        createdBy:
+          description: User id of the agent, for the BRANCH channel
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        submittedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          description: A draft not submitted by this date is purged (30 days)
+          type: string
+          format: date-time
+    AccountApplicationCreated:
+      allOf:
+        - $ref: '#/components/schemas/AccountApplication'
+        - type: object
+          required: [applicationToken]
+          properties:
+            applicationToken:
+              description: Bearer token giving access to this application only (KIOSK channel). Returned once.
+              type: string
+    AccountApplicationPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountApplication'
+        nextCursor:
+          description: Absent on the last page
+          type: string
+    PhoneVerificationStarted:
+      type: object
+      required: [maskedPhone, expiresAt, attemptsAllowed]
+      properties:
+        maskedPhone:
+          type: string
+          examples: ['+2126******78']
+        expiresAt:
+          type: string
+          format: date-time
+        attemptsAllowed:
+          type: integer
+          minimum: 1
+    PhoneVerificationConfirm:
+      type: object
+      required: [code]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          pattern: '^[0-9]{6}$'
 
     # ─────────────── errors ───────────────
     Error:

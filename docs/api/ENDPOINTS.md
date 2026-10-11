@@ -23,8 +23,9 @@ Ce guide explique **à quoi sert chaque endpoint, quand l'appeler et comment il 
    - [4.9 Paramétrage – Services](#49-paramétrage--services)
    - [4.10 Paramétrage – Relations service ↔ périphérique](#410-paramétrage--relations-service--périphérique)
    - [4.11 Paramétrage – Dépôt et retrait](#411-paramétrage--dépôt-et-retrait)
+   - [4.12 Ouverture de compte (KYC)](#412-ouverture-de-compte-kyc)
 5. [Codes d'erreur](#5-codes-derreur)
-6. [Tableau récapitulatif des 38 endpoints](#6-tableau-récapitulatif-des-38-endpoints)
+6. [Tableau récapitulatif des 50 endpoints](#6-tableau-récapitulatif-des-50-endpoints)
 
 ---
 
@@ -54,7 +55,9 @@ Ce guide explique **à quoi sert chaque endpoint, quand l'appeler et comment il 
 | `CUSTOMER` | Client connecté sur un kiosque (carte + PIN) | Ses comptes, dépôt, retrait, services du kiosque, paramètres dépôt et retrait (lecture) |
 | `AGENT` | Agent d'agence (portail) | Lecture de tout le KMS |
 | `SUPERVISOR` | Superviseur (portail) | Lecture du KMS, plus le **changement de statut** des périphériques |
-| `ADMIN` | Administrateur (portail) | Tout, y compris la création, la modification et la suppression, et le paramétrage |
+| `ADMIN` | Administrateur (portail) | Tout, y compris la création, la modification et la suppression, et le paramétrage (sauf la décision de conformité) |
+| `COMPLIANCE` | Responsable conformité (portail) | Lecture des demandes d'ouverture de compte, et **seul à décider** des dossiers en revue |
+| *Token d'application* | Prospect sur un kiosque, sans compte | Uniquement **son** dossier d'ouverture de compte ([§4.12](#412-ouverture-de-compte-kyc)) |
 
 Un rôle insuffisant renvoie `403 FORBIDDEN`.
 
@@ -168,8 +171,8 @@ Chaque problème est expliqué dans `issues` avec un `reasonCode` : `DEVICE_MISS
 
 | Kiosque | Situation | Effet |
 |---|---|---|
-| `KIOSK-01` (Casablanca) | Tout fonctionne | `HEALTHY` ; dépôt, retrait, solde et historique disponibles |
-| `KIOSK-02` (Rabat) | Accepteur `DEV-0204` en `ERROR` (bourrage), imprimante `DEV-0206` en `ERROR` (papier) | `DEGRADED` ; dépôt `UNAVAILABLE`, retrait `DEGRADED`, solde `AVAILABLE` |
+| `KIOSK-01` (Casablanca) | Tout fonctionne ; équipé d'une caméra et d'un scanner de pièce | `HEALTHY` ; dépôt, retrait, solde, historique et ouverture de compte disponibles |
+| `KIOSK-02` (Rabat) | Accepteur `DEV-0204` en `ERROR` (bourrage), imprimante `DEV-0206` en `ERROR` (papier) ; ni caméra ni scanner | `DEGRADED` ; dépôt `UNAVAILABLE`, retrait `DEGRADED`, solde `AVAILABLE`, ouverture de compte `UNAVAILABLE` |
 | `KIOSK-03` (Marrakech) | Kiosque `OFFLINE`, périphériques `OFFLINE`, pas de distributeur | `OUT_OF_SERVICE` |
 
 ---
@@ -231,6 +234,35 @@ Le dépôt suit le même parcours avec `POST /deposits`. Le kiosque peut envoyer
 2. POST /kms/services                     {serviceCode: "BILL_PAYMENT", name: "Paiement de factures"}
 3. PUT  /kms/services/BILL_PAYMENT/device-requirements/BARCODE_SCANNER   {requirement: MANDATORY}
 4. PUT  /kms/kiosks/KIOSK-01/services/BILL_PAYMENT   {enabled: true}
+```
+
+### 3.5 Kiosque : un prospect ouvre un compte
+
+```
+1. GET  /kms/kiosks/KIOSK-01/services                → ACCOUNT_OPENING disponible ? (scanner + caméra)
+2. POST /account-applications {channel: KIOSK, kioskId, productCode, consents}
+                                                     → applicationId + applicationToken (à garder)
+   Tous les appels suivants : Authorization: Bearer <applicationToken>
+3. POST …/documents  ID_FRONT, ID_BACK               (scanner de pièce)
+   POST …/documents  SELFIE                          (caméra)
+   POST …/documents  PROOF_OF_ADDRESS
+4. PATCH /account-applications/{id}  {applicant: identité + questionnaire KYC}
+5. POST …/phone-verification → SMS ;  POST …/phone-verification/confirm {code}
+6. POST …/submit
+   → 200 APPROVED      : afficher le RIB, imprimer le contrat
+   → 200 UNDER_REVIEW  : « demande en cours d'étude »
+   → 200 REJECTED      : message neutre
+   → 422 APPLICATION_INCOMPLETE : details liste ce qu'il manque → revenir à l'étape concernée
+```
+
+### 3.6 Portail : la conformité traite un dossier en revue
+
+```
+1. GET  /account-applications?status=UNDER_REVIEW    → file d'attente (ex. APP-1002, PEP, risque HIGH)
+2. GET  /account-applications/APP-1002               → kyc.checks : PEP_SCREENING = REVIEW (PEP_DECLARED)
+3. GET  /account-applications/APP-1002/documents     → pièces à examiner
+4. POST /account-applications/APP-1002/decision {decision: APPROVE, comment}
+   → APPROVED, compte ouvert (account.accountId, account.rib)
 ```
 
 ---
@@ -702,7 +734,7 @@ Le catalogue est la **liste globale** des types de périphériques connus du sys
 | `PATCH /kms/device-types/{code}` | ADMIN | Modifie `name`, `category` ou `description`. Le code ne change pas |
 | `DELETE /kms/device-types/{code}` | ADMIN | Supprime → `204`. **Refusé (`409 DEVICE_TYPE_IN_USE`)** si un périphérique de ce type est installé ou si un service l'exige |
 
-Catalogue de démonstration : `CARD_READER`, `PIN_PAD`, `TOUCH_SCREEN`, `CASH_ACCEPTOR`, `CASH_DISPENSER`, `RECEIPT_PRINTER`, `BARCODE_SCANNER`, `CAMERA`.
+Catalogue de démonstration : `CARD_READER`, `PIN_PAD`, `TOUCH_SCREEN`, `CASH_ACCEPTOR`, `CASH_DISPENSER`, `RECEIPT_PRINTER`, `BARCODE_SCANNER`, `CAMERA`, `ID_SCANNER`.
 
 ### 4.9 Paramétrage – Services
 
@@ -712,7 +744,7 @@ Catalogue de démonstration : `CARD_READER`, `PIN_PAD`, `TOUCH_SCREEN`, `CASH_AC
 | `POST /kms/services` | ADMIN | Crée un service : `{ "serviceCode": "BILL_PAYMENT", "name": "Paiement de factures", "description": "…", "enabled": true }` → `201`. Il est créé **sans exigence** ; `enabled` vaut `true` par défaut. `409 SERVICE_ALREADY_EXISTS` si le code existe déjà |
 | `GET /kms/services/{code}` | AGENT, SUPERVISOR, ADMIN | Détail, avec `deviceRequirements` |
 | `PATCH /kms/services/{code}` | ADMIN | Modifie `name`, `description`, `enabled`. **`enabled: false` désactive le service sur tous les kiosques** : il devient `UNAVAILABLE` avec `SERVICE_DISABLED` |
-| `DELETE /kms/services/{code}` | ADMIN | → `204`. **Refusé** pour un service intégré (`409 SERVICE_BUILT_IN` : DEPOSIT, WITHDRAWAL, BALANCE, HISTORY) ou affecté à un kiosque (`409 SERVICE_ASSIGNED` : le retirer des kiosques d'abord) |
+| `DELETE /kms/services/{code}` | ADMIN | → `204`. **Refusé** pour un service intégré (`409 SERVICE_BUILT_IN` : DEPOSIT, WITHDRAWAL, BALANCE, HISTORY, ACCOUNT_OPENING) ou affecté à un kiosque (`409 SERVICE_ASSIGNED` : le retirer des kiosques d'abord) |
 
 **Exemple** : `GET /kms/services/WITHDRAWAL`
 ```json
@@ -752,6 +784,7 @@ Exigences de démonstration :
 | `DEPOSIT` | lecteur de carte, PIN pad, écran, accepteur de billets | — | imprimante |
 | `WITHDRAWAL` | lecteur de carte, PIN pad, écran, distributeur de billets | imprimante | — |
 | `BALANCE`, `HISTORY` | lecteur de carte, PIN pad, écran | — | imprimante |
+| `ACCOUNT_OPENING` | écran, scanner de pièce d'identité, caméra | imprimante | — |
 | `STATEMENT` (non intégré, non affecté) | lecteur de carte, PIN pad, écran, imprimante | — | — |
 
 ### 4.11 Paramétrage – Dépôt et retrait
@@ -792,6 +825,247 @@ Ce sont les règles appliquées par `POST /deposits` et `POST /withdrawals`. Ell
   - chaque billet est un multiple de `amountMultipleOf` ;
   - chaque montant rapide est compris entre le minimum et le maximum, et est un multiple de `amountMultipleOf`.
 
+### 4.12 Ouverture de compte (KYC)
+
+Une **demande d'ouverture de compte** (« dossier ») passe par ces étapes :
+
+| Statut | Signification |
+|---|---|
+| `DRAFT` | Brouillon en cours de saisie : identité, questionnaire KYC, pièces, téléphone. Modifiable. Purgé au bout de 30 jours s'il n'est pas soumis (`expiresAt`) |
+| `UNDER_REVIEW` | Soumis ; les contrôles demandent une **décision humaine** (rôle COMPLIANCE) |
+| `APPROVED` | Accepté : **le compte est ouvert** (`account` contient `accountId` et RIB) |
+| `REJECTED` | Refusé, automatiquement (contrôle `FAIL`) ou par la conformité |
+| `CANCELLED` | Annulé par le prospect ou l'agent |
+
+**Deux canaux :**
+- **`KIOSK`** (libre-service) : le prospect n'a pas encore de compte, donc pas de token. `POST /account-applications` se fait **sans authentification** et renvoie un **`applicationToken`**, à envoyer en `Authorization: Bearer …` sur les appels suivants. Ce token n'ouvre **que ce dossier**.
+- **`BRANCH`** (agence) : un agent remplit le dossier dans le portail avec son propre token (AGENT ou ADMIN).
+
+**Qui peut faire quoi :**
+
+| Action | Token d'application | AGENT | ADMIN | SUPERVISOR | COMPLIANCE |
+|---|---|---|---|---|---|
+| Lister les dossiers | — | ✅ | ✅ | ✅ | ✅ |
+| Lire un dossier | ✅ (le sien) | ✅ | ✅ | ✅ | ✅ |
+| Compléter, pièces, téléphone, soumettre, annuler | ✅ (le sien) | ✅ | ✅ | — | — |
+| **Décider** (dossier `UNDER_REVIEW`) | — | — | — | — | ✅ **seul** |
+
+L'agent qui monte un dossier ne peut pas le valider : c'est la **séparation des tâches** exigée en conformité.
+
+**Contrôles KYC automatiques**, lancés à la soumission :
+
+| Contrôle | Résultat | Effet |
+|---|---|---|
+| `ID_DOCUMENT_VALIDITY` | `FAIL` si la pièce est expirée (`ID_EXPIRED`) | Rejet |
+| `AGE` | `FAIL` si moins de 18 ans (`UNDERAGE`) | Rejet |
+| `FACE_MATCH` | `FAIL` si le selfie ne correspond pas à la photo de la pièce (`FACE_MISMATCH`) | Rejet |
+| `SANCTIONS_SCREENING` | `FAIL` si le nom figure sur une liste de sanctions (`SANCTIONS_HIT`) | Rejet |
+| `PEP_SCREENING` | `REVIEW` si personne politiquement exposée, déclarée (`PEP_DECLARED`) ou détectée (`PEP_LIST_HIT`) | Revue, risque `HIGH` |
+| `DUPLICATE_CUSTOMER` | `REVIEW` si la pièce appartient déjà à un client (`EXISTING_CUSTOMER`) | Revue |
+| `FATCA` | `REVIEW` si « US person » (`US_PERSON`) : formulaire W-9 à obtenir | Revue |
+
+**Niveau de risque** : `HIGH` pour une PEP ; `MEDIUM` pour une nationalité étrangère, une US person ou des fonds d'origine « autre » ; sinon `LOW`.
+
+**Décision** (champ `kyc.outcome`) :
+
+| Condition | `kyc.outcome` | Statut du dossier |
+|---|---|---|
+| Au moins un contrôle `FAIL` | `AUTO_REJECTED` | **`REJECTED`** |
+| Sinon, un contrôle `REVIEW` ou un risque `HIGH` | `MANUAL_REVIEW` | **`UNDER_REVIEW`** |
+| Sinon | `AUTO_APPROVED` | **`APPROVED`**, et le compte est ouvert immédiatement |
+
+> **Données de test du mock** pour obtenir chaque résultat : nom `Sanction` (sanctions), nom `Pep` ou `isPoliticallyExposed: true` (PEP), selfie dont le nom de fichier contient `mismatch`, pièce n° `BK123456` (client existant), `usPerson: true`, pièce expirée, date de naissance de moins de 18 ans. Le code SMS est toujours **`123456`**.
+
+#### `POST /account-applications` — Démarrer une demande
+
+**Rôle** : aucun pour `KIOSK` ; AGENT ou ADMIN pour `BRANCH`.
+
+```json
+{
+  "channel": "KIOSK",
+  "kioskId": "KIOSK-01",
+  "productCode": "CURRENT_ACCOUNT",
+  "applicant": { "firstName": "Nadia", "lastName": "Idrissi", "phone": "+212698765432" },
+  "consents": { "dataProcessing": true, "marketing": false }
+}
+```
+- `productCode` : `CURRENT_ACCOUNT` (compte courant), `SAVINGS_ACCOUNT` (épargne) ou `BASIC_ACCOUNT` (compte de base).
+- `applicant` et `consents` sont optionnels à ce stade : ils peuvent être complétés ensuite par `PATCH`.
+- Canal `KIOSK` : le service **`ACCOUNT_OPENING`** doit être disponible sur le kiosque, sinon `422 SERVICE_UNAVAILABLE_ON_KIOSK`. Il exige un écran, un **scanner de pièce d'identité** et une **caméra** ; une imprimante est recommandée pour le contrat. Dans le mock, `KIOSK-01` en est équipé, `KIOSK-02` non.
+
+**Réponse `201`**
+```json
+{
+  "applicationId": "APP-5001",
+  "status": "DRAFT",
+  "channel": "KIOSK",
+  "kioskId": "KIOSK-01",
+  "productCode": "CURRENT_ACCOUNT",
+  "applicant": {},
+  "consents": { "dataProcessing": true, "marketing": false },
+  "phoneVerified": false,
+  "documents": [],
+  "createdAt": "2026-10-11T15:41:36.592Z",
+  "updatedAt": "2026-10-11T15:41:36.592Z",
+  "expiresAt": "2026-11-10T15:41:36.592Z",
+  "applicationToken": "app-token-APP-5001-03e6706a"
+}
+```
+`applicationToken` n'est renvoyé **qu'une fois** : le kiosque doit le garder pendant toute la session.
+
+**Erreurs** : `400` (canal, produit, kiosque, format d'un champ) · `401` (`BRANCH` sans token) · `403` (rôle autre qu'AGENT ou ADMIN) · `422 SERVICE_UNAVAILABLE_ON_KIOSK`.
+
+#### `GET /account-applications` — Lister les dossiers (back-office)
+
+**Rôle** : AGENT, SUPERVISOR, ADMIN, COMPLIANCE. **Filtres** : `status`, `channel`, `riskLevel`, plus `limit` et `cursor`. Tri : les plus récents d'abord.
+**File d'attente de la conformité** : `GET /account-applications?status=UNDER_REVIEW`.
+
+#### `GET /account-applications/{applicationId}` — Lire un dossier
+
+**Rôle** : son token d'application, ou AGENT, SUPERVISOR, ADMIN, COMPLIANCE. Renvoie tout le dossier : identité, pièces (métadonnées), `kyc` (résultat des contrôles), `review` (décision de la conformité) et `account` (compte ouvert).
+**Erreurs** : `401` · `403` (token d'un autre dossier, ou rôle insuffisant) · `404 APPLICATION_NOT_FOUND`.
+
+#### `PATCH /account-applications/{applicationId}` — Compléter le dossier
+
+**Rôle** : son token d'application, ou AGENT, ADMIN. **Uniquement en `DRAFT`**, sinon `409 APPLICATION_NOT_EDITABLE`.
+
+```json
+{
+  "applicant": {
+    "dateOfBirth": "1995-02-20",
+    "nationality": "MA",
+    "idDocument": { "type": "CIN", "number": "JK445566", "expiryDate": "2032-05-01" },
+    "address": { "line1": "3 rue Al Massira", "city": "Agadir", "country": "MA" },
+    "occupation": "Enseignante",
+    "monthlyIncomeRange": "FROM_3000_TO_10000",
+    "sourceOfFunds": "SALARY",
+    "isPoliticallyExposed": false,
+    "usPerson": false
+  }
+}
+```
+- Les champs de `applicant` sont **fusionnés** avec l'existant ; `idDocument` et `address` sont remplacés en bloc.
+- **Changer le téléphone annule sa vérification** (`phoneVerified` repasse à `false`).
+- Formats contrôlés (`400` sinon) : dates `AAAA-MM-JJ`, pays au code ISO à 2 lettres (`MA`), téléphone au format international (`+212…`), e-mail.
+
+| Champ du questionnaire | Valeurs |
+|---|---|
+| `idDocument.type` | `CIN`, `PASSPORT`, `RESIDENCE_PERMIT` |
+| `monthlyIncomeRange` (MAD par mois) | `UNDER_3000`, `FROM_3000_TO_10000`, `FROM_10000_TO_30000`, `OVER_30000` |
+| `sourceOfFunds` | `SALARY`, `BUSINESS`, `PENSION`, `SAVINGS`, `FAMILY_SUPPORT`, `OTHER` |
+| `isPoliticallyExposed` | auto-déclaration PEP |
+| `usPerson` | auto-déclaration FATCA |
+
+#### `POST /account-applications/{applicationId}/documents` — Déposer une pièce
+
+**Rôle** : son token d'application, ou AGENT, ADMIN. Uniquement en `DRAFT`.
+
+```json
+{ "type": "SELFIE", "fileName": "selfie.jpg", "mimeType": "image/jpeg", "contentBase64": "/9j/4AAQSkZJRg…" }
+```
+- `type` : `ID_FRONT` (recto), `ID_BACK` (verso), `SELFIE`, `PROOF_OF_ADDRESS` (justificatif de domicile), `PROOF_OF_INCOME` (justificatif de revenus).
+- Formats : JPEG, PNG ou PDF, **5 Mo maximum**, envoyés en base64.
+- **Une pièce par type** : un nouvel envoi remplace le précédent.
+- La réponse `201` ne contient que les métadonnées (`documentId`, `sizeBytes`…), jamais le contenu.
+
+**Erreurs** : `400 INVALID_DOCUMENT` (type, format, base64 invalide, taille) · `409 APPLICATION_NOT_EDITABLE`.
+
+`GET …/documents` liste les pièces (métadonnées). `DELETE …/documents/{documentId}` en supprime une → `204`, ou `404 DOCUMENT_NOT_FOUND`.
+
+#### `POST /account-applications/{applicationId}/phone-verification` — Envoyer un code par SMS
+
+**Rôle** : son token d'application, ou AGENT, ADMIN. Uniquement en `DRAFT`, et une fois `applicant.phone` renseigné (sinon `422 PHONE_MISSING`).
+
+**Réponse `202`**
+```json
+{ "maskedPhone": "+2126******78", "expiresAt": "2026-10-11T15:51:36.599Z", "attemptsAllowed": 3 }
+```
+Le code est valable **10 minutes**, avec **3 essais**. Un nouvel appel envoie un nouveau code. Dans le mock, le code est toujours `123456`.
+
+#### `POST /account-applications/{applicationId}/phone-verification/confirm` — Valider le code
+
+```json
+{ "code": "123456" }
+```
+**Réponse `200`** : le dossier, avec `phoneVerified: true`.
+**Erreurs `422`** : `OTP_NOT_REQUESTED` (aucun code envoyé) · `OTP_EXPIRED` · `OTP_INVALID` (le message indique les essais restants) · `OTP_ATTEMPTS_EXCEEDED` (3 erreurs : demander un nouveau code).
+
+#### `POST /account-applications/{applicationId}/submit` — Soumettre et lancer le KYC
+
+**Rôle** : son token d'application, ou AGENT, ADMIN. Uniquement en `DRAFT`.
+
+**1. Complétude.** S'il manque quelque chose : `422 APPLICATION_INCOMPLETE`, avec **la liste complète** de ce qui manque dans `details` :
+```json
+{
+  "code": "APPLICATION_INCOMPLETE",
+  "details": [
+    { "field": "applicant.dateOfBirth", "issue": "is required" },
+    { "field": "documents.SELFIE", "issue": "is required" },
+    { "field": "phoneVerified", "issue": "phone must be verified" },
+    { "field": "consents.dataProcessing", "issue": "consent is required" }
+  ]
+}
+```
+Sont exigés :
+- tous les champs du questionnaire ;
+- les pièces `ID_FRONT`, `SELFIE` et `PROOF_OF_ADDRESS`, plus `ID_BACK` pour une CIN ;
+- le téléphone vérifié ;
+- le consentement au traitement des données (`consents.dataProcessing: true`, loi 09-08).
+
+**2. Contrôles KYC**, puis décision (voir le tableau en tête de section). **Réponse `200`** : le dossier avec son nouveau statut et `kyc`.
+```json
+{
+  "applicationId": "APP-1001",
+  "status": "APPROVED",
+  "kyc": {
+    "checks": [
+      { "check": "ID_DOCUMENT_VALIDITY", "result": "PASS", "message": "ID document is valid" },
+      { "check": "AGE", "result": "PASS", "message": "Applicant is 34" },
+      { "check": "FACE_MATCH", "result": "PASS", "message": "Selfie matches the ID photo" },
+      { "check": "SANCTIONS_SCREENING", "result": "PASS", "message": "No sanctions match" },
+      { "check": "PEP_SCREENING", "result": "PASS", "message": "Not a politically exposed person" },
+      { "check": "DUPLICATE_CUSTOMER", "result": "PASS", "message": "New customer" },
+      { "check": "FATCA", "result": "PASS", "message": "Not a US person" }
+    ],
+    "riskLevel": "LOW",
+    "outcome": "AUTO_APPROVED",
+    "evaluatedAt": "2026-10-11T15:41:36.605Z"
+  },
+  "account": {
+    "accountId": "ACC-5001",
+    "rib": "007780000000000000500195",
+    "productCode": "CURRENT_ACCOUNT",
+    "currency": "MAD",
+    "openedAt": "2026-10-11T15:41:36.605Z"
+  },
+  "…": "identité, pièces, dates"
+}
+```
+Le **RIB** (24 chiffres) a une clé de contrôle valide (modulo 97). Le compte ouvert est aussitôt consultable par `GET /accounts/{accountId}/balance` (solde 0).
+
+**Côté kiosque** : `APPROVED` → afficher le RIB et imprimer le contrat ; `UNDER_REVIEW` → « Votre demande est en cours d'étude, vous serez contacté » ; `REJECTED` → message neutre, **sans en donner la raison** (une alerte sanctions ne doit jamais être révélée au prospect).
+
+#### `POST /account-applications/{applicationId}/decision` — Décision de la conformité
+
+**Rôle** : **COMPLIANCE uniquement**. Uniquement en `UNDER_REVIEW`, sinon `409 APPLICATION_NOT_UNDER_REVIEW`.
+
+```json
+{ "decision": "APPROVE", "comment": "PEP : origine des fonds justifiée, validation du responsable conformité" }
+```
+```json
+{ "decision": "REJECT", "reasonCode": "HIGH_RISK", "comment": "Origine des fonds non justifiée" }
+```
+- `comment` est **obligatoire** (piste d'audit) ; `reasonCode` est obligatoire pour un rejet.
+- `APPROVE` → `APPROVED`, et le compte est ouvert.
+- La décision est enregistrée dans `review` (`decidedBy`, `decidedAt`).
+
+#### `POST /account-applications/{applicationId}/cancel` — Annuler
+
+**Rôle** : son token d'application, ou AGENT, ADMIN. Possible en `DRAFT` ou `UNDER_REVIEW`, sinon `409 APPLICATION_NOT_CANCELLABLE`.
+```json
+{ "reason": "Le client renonce" }
+```
+
 ---
 
 ## 5. Codes d'erreur
@@ -822,13 +1096,23 @@ Les messages proposés dans ce tableau sont des suggestions pour l'interface.
 | `DENOMINATION_NOT_ACCEPTED` | 422 | Billet non accepté (dépôt) | Rendre les billets refusés |
 | `TOO_MANY_NOTES` | 422 | Trop de billets | « Montant trop élevé pour une seule opération » |
 | `INSUFFICIENT_FUNDS` | 422 | Solde disponible insuffisant | « Solde insuffisant » |
+| `APPLICATION_NOT_FOUND`, `DOCUMENT_NOT_FOUND` | 404 | Dossier ou pièce introuvable | Rafraîchir |
+| `INVALID_DOCUMENT` | 400 | Pièce invalide : type, format, base64 ou taille > 5 Mo | « Fichier non accepté » |
+| `APPLICATION_NOT_EDITABLE` | 409 | Le dossier n'est plus un brouillon | Recharger le dossier |
+| `APPLICATION_NOT_UNDER_REVIEW` | 409 | Décision sur un dossier qui n'est pas en revue | Recharger : un autre agent a peut-être déjà décidé |
+| `APPLICATION_NOT_CANCELLABLE` | 409 | Dossier déjà accepté, refusé ou annulé | — |
+| `APPLICATION_INCOMPLETE` | 422 | Il manque des informations ; voir `details` | Guider vers chaque élément manquant |
+| `PHONE_MISSING` | 422 | Pas de téléphone à vérifier | Demander le numéro |
+| `OTP_NOT_REQUESTED`, `OTP_EXPIRED` | 422 | Aucun code valide en cours | Proposer « Renvoyer le code » |
+| `OTP_INVALID` | 422 | Code faux ; le message indique les essais restants | « Code incorrect » |
+| `OTP_ATTEMPTS_EXCEEDED` | 422 | 3 codes faux | Envoyer un nouveau code |
 | `CBS_UNAVAILABLE` | 503 | Système bancaire central indisponible (`retryable: true`) | « Service momentanément indisponible, réessayez » |
 | `KMS_UNAVAILABLE` | 503 | KMS indisponible (`retryable: true`) | Portail : bandeau d'alerte. Kiosque : garder le dernier menu connu |
 | `UPSTREAM_TIMEOUT` | 504 | Pas de réponse à temps (`retryable: true`) | Dépôt et retrait : renvoyer avec **la même** `Idempotency-Key` |
 
 ---
 
-## 6. Tableau récapitulatif des 38 endpoints
+## 6. Tableau récapitulatif des 50 endpoints
 
 | # | Méthode | Chemin | Fonction | Rôles |
 |---|---|---|---|---|
@@ -870,5 +1154,17 @@ Les messages proposés dans ce tableau sont des suggestions pour l'interface.
 | 36 | PUT | `/kms/deposit-settings` | Modifier les paramètres du dépôt | Ad |
 | 37 | GET | `/kms/withdrawal-settings` | Paramètres du retrait | connecté |
 | 38 | PUT | `/kms/withdrawal-settings` | Modifier les paramètres du retrait | Ad |
+| 39 | GET | `/account-applications` | Lister les demandes d'ouverture de compte | A S Ad C |
+| 40 | POST | `/account-applications` | Démarrer une demande | public (kiosque) · A Ad (agence) |
+| 41 | GET | `/account-applications/{applicationId}` | Lire une demande | T A S Ad C |
+| 42 | PATCH | `/account-applications/{applicationId}` | Compléter une demande | T A Ad |
+| 43 | GET | `/account-applications/{applicationId}/documents` | Lister les pièces | T A S Ad C |
+| 44 | POST | `/account-applications/{applicationId}/documents` | Déposer une pièce | T A Ad |
+| 45 | DELETE | `/account-applications/{applicationId}/documents/{documentId}` | Supprimer une pièce | T A Ad |
+| 46 | POST | `/account-applications/{applicationId}/phone-verification` | Envoyer un code SMS | T A Ad |
+| 47 | POST | `/account-applications/{applicationId}/phone-verification/confirm` | Valider le code SMS | T A Ad |
+| 48 | POST | `/account-applications/{applicationId}/submit` | Soumettre et lancer le KYC | T A Ad |
+| 49 | POST | `/account-applications/{applicationId}/decision` | Décision de la conformité | C |
+| 50 | POST | `/account-applications/{applicationId}/cancel` | Annuler une demande | T A Ad |
 
-Rôles : **A** = AGENT, **S** = SUPERVISOR, **Ad** = ADMIN, **connecté** = tout utilisateur authentifié (y compris CUSTOMER).
+Rôles : **A** = AGENT, **S** = SUPERVISOR, **Ad** = ADMIN, **C** = COMPLIANCE, **T** = token d'application du dossier, **connecté** = tout utilisateur authentifié (y compris CUSTOMER).

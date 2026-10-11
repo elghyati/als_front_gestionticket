@@ -1,9 +1,9 @@
 # Contrat API MVP : décisions, questions ouvertes, risques
 
 Story 3.2 : API simulée et contrat OpenAPI. Responsable : Si Abdelkbir.
-Statut : **BROUILLON** (version 0.2.0), gel prévu le **lundi 12 octobre**.
+Statut : **BROUILLON** (version 0.3.0), gel prévu le **lundi 12 octobre**.
 
-## Appels couverts (38 opérations)
+## Appels couverts (50 opérations)
 
 | Domaine | Appels | Utilisé par |
 |---|---|---|
@@ -18,6 +18,7 @@ Statut : **BROUILLON** (version 0.2.0), gel prévu le **lundi 12 octobre**.
 | Services | `GET, POST /kms/services` ; `GET, PATCH, DELETE /kms/services/{code}` | Portail (paramétrage) |
 | Relations service ↔ périphérique | `GET /kms/services/{code}/device-requirements` ; `PUT, DELETE …/device-requirements/{deviceTypeCode}` | Portail (paramétrage) |
 | Paramètres dépôt et retrait | `GET, PUT /kms/deposit-settings` ; `GET, PUT /kms/withdrawal-settings` | Kiosque (lecture), portail |
+| Ouverture de compte (KYC) | `GET, POST /account-applications` ; `GET, PATCH …/{id}` ; `GET, POST …/documents` ; `DELETE …/documents/{documentId}` ; `POST …/phone-verification`, `…/confirm` ; `POST …/submit`, `…/decision`, `…/cancel` | Kiosque (libre-service), portail (agence, conformité) |
 
 ## Décisions
 
@@ -40,7 +41,17 @@ Statut : **BROUILLON** (version 0.2.0), gel prévu le **lundi 12 octobre**.
 | D-15 | Trois niveaux d'exigence service ↔ type de périphérique : `MANDATORY`, `RECOMMENDED`, `OPTIONAL` (voir la règle dans le README) | Permet d'expliquer le mode dégradé : par exemple, un retrait sans imprimante reste possible, mais sans ticket |
 | D-16 | La disponibilité des services et la santé du kiosque sont **calculées** par le serveur, jamais saisies | Une seule source de vérité, utilisée à la fois par le kiosque et par le portail |
 | D-17 | Les paramètres dépôt et retrait sont **globaux** et lisibles par tout utilisateur connecté | Le kiosque affiche les limites et les montants rapides. Une surcharge par kiosque reste à décider (OQ-7) |
-| D-18 | Un service intégré (`builtIn` : DEPOSIT, WITHDRAWAL, BALANCE, HISTORY) ne peut pas être supprimé. Un service affecté à un kiosque, un type de périphérique installé ou demandé par un service, et un kiosque `ONLINE` ne peuvent pas non plus être supprimés (409) | Évite de casser la configuration en production |
+| D-18 | Un service intégré (`builtIn` : DEPOSIT, WITHDRAWAL, BALANCE, HISTORY, ACCOUNT_OPENING) ne peut pas être supprimé. Un service affecté à un kiosque, un type de périphérique installé ou demandé par un service, et un kiosque `ONLINE` ne peuvent pas non plus être supprimés (409) | Évite de casser la configuration en production |
+| D-19 | **Ouverture de compte = un dossier** (`/account-applications`) avec un cycle de vie explicite : `DRAFT` → `APPROVED` / `UNDER_REVIEW` / `REJECTED`, ou `CANCELLED` | On peut le reprendre, l'auditer et le traiter en back-office. Le compte n'existe qu'une fois le dossier accepté |
+| D-20 | Canal **KIOSK sans authentification** : la création renvoie un **token d'application** limité à ce seul dossier | Le prospect n'a ni carte ni compte. Le token limite l'exposition à son propre dossier |
+| D-21 | KYC en deux temps : **complétude** (`422 APPLICATION_INCOMPLETE` avec la liste exhaustive de ce qui manque), puis **contrôles** (pièce, âge, visage, sanctions, PEP, client existant, FATCA) avec un **niveau de risque** | L'interface guide le prospect ; les contrôles sont traçables un par un dans `kyc.checks` |
+| D-22 | Règle de décision : un `FAIL` → rejet automatique ; un `REVIEW` ou un risque `HIGH` → revue humaine ; sinon acceptation et ouverture immédiates | Approche par les risques : l'humain n'intervient que là où c'est nécessaire |
+| D-23 | **Séparation des tâches** : seul le rôle `COMPLIANCE` décide d'un dossier en revue. Commentaire obligatoire, motif obligatoire pour un rejet, décision tracée (`decidedBy`, `decidedAt`) | Exigence de conformité et piste d'audit |
+| D-24 | **Vérification du téléphone par code SMS** (10 minutes, 3 essais) ; changer le numéro annule la vérification | Le téléphone sert ensuite à l'authentification forte et aux alertes |
+| D-25 | **Consentement explicite** au traitement des données (`consents.dataProcessing`) obligatoire pour soumettre ; consentement marketing séparé et facultatif | Loi 09-08 relative à la protection des données personnelles |
+| D-26 | Pièces envoyées en base64 (JPEG, PNG, PDF, 5 Mo maximum), une par type ; l'API ne renvoie jamais leur contenu, seulement leurs métadonnées | Simplicité pour le MVP ; aucune fuite d'images d'identité par les lectures |
+| D-27 | Service KMS intégré **`ACCOUNT_OPENING`** : écran, scanner de pièce et caméra obligatoires, imprimante recommandée | Le kiosque ne propose l'ouverture de compte que s'il est équipé |
+| D-28 | Un rejet n'est **jamais motivé auprès du prospect** côté kiosque | Une alerte sanctions ne doit pas être révélée (risque de « tipping-off ») |
 
 ## Questions ouvertes
 
@@ -57,6 +68,12 @@ Statut : **BROUILLON** (version 0.2.0), gel prévu le **lundi 12 octobre**.
 | OQ-9 | `ONLINE` / `OFFLINE` : saisi par un administrateur ou calculé par un heartbeat (`lastSeenAt`) ? Quel délai avant de passer `OFFLINE` ? | Back-end KMS | Lun. 12 oct. |
 | OQ-10 | Durée de conservation de l'historique des statuts, et besoin d'export (CSV) | PO | Lun. 12 oct. |
 | OQ-11 | Modifications concurrentes dans le portail : faut-il un contrôle optimiste (ETag / `If-Match`) ? | À définir | Lun. 12 oct. |
+| OQ-12 | Fournisseurs réels des contrôles KYC : vérification de la CIN (DGSN ?), reconnaissance faciale, listes de sanctions et de PEP. Délais de réponse et fonctionnement asynchrone éventuel (statut intermédiaire « contrôles en cours ») | Back-end, Conformité | Lun. 12 oct. |
+| OQ-13 | Seuils et règles du **niveau de risque** (revenus, profession, nationalité, origine des fonds) à valider par la Conformité ; revue périodique du KYC selon le risque | Conformité | À définir |
+| OQ-14 | Après l'ouverture : émission de la carte, signature électronique du contrat, dépôt initial minimum, accès à la banque en ligne | PO | À définir |
+| OQ-15 | **Conservation et purge** des pièces et des données (brouillons après 30 jours, dossiers rejetés), déclaration auprès de la CNDP, chiffrement des pièces au repos | Conformité, Sécurité | À définir |
+| OQ-16 | Durée de vie et révocation du **token d'application** ; reprise d'un dossier interrompu sur un autre kiosque (par SMS ?) | Back-end | Lun. 12 oct. |
+| OQ-17 | Envoi des pièces en `multipart/form-data` plutôt qu'en base64 si les fichiers dépassent régulièrement 1 Mo | Back-end | À définir |
 
 ## Risques
 

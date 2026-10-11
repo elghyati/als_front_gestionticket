@@ -29,6 +29,13 @@ export const users: MockUser[] = [
     password: "superviseur",
   },
   { id: "U-ADMIN-1", displayName: "Admin Démo", roles: ["ADMIN"], username: "admin", password: "admin" },
+  {
+    id: "U-COMP-1",
+    displayName: "Conformité Démo",
+    roles: ["COMPLIANCE"],
+    username: "conformite",
+    password: "conformite",
+  },
 ];
 
 export const tokenFor = (user: User): string => `mock-token-${user.id}`;

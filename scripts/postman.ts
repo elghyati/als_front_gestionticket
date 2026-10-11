@@ -28,7 +28,7 @@ interface Spec {
 type Header = { key: string; value: string; description?: string; disabled?: boolean };
 type Item = Record<string, unknown>;
 
-export const ROLE_VARIABLES = ["CUSTOMER", "AGENT", "SUPERVISOR", "ADMIN"].map((role) => ({
+export const ROLE_VARIABLES = ["CUSTOMER", "AGENT", "SUPERVISOR", "ADMIN", "COMPLIANCE"].map((role) => ({
   role,
   key: `token_${role.toLowerCase()}`,
   value: tokenFor(users.find((u) => u.roles.includes(role as never))!),

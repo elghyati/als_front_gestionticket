@@ -18,6 +18,10 @@ Dans les schémas, « API » désigne le back-end vu par le front : Agent, Route
 10. [Ce qui recalcule la disponibilité](#10-ce-qui-recalcule-la-disponibilité)
 11. [Cycle de vie d'un kiosque](#11-cycle-de-vie-dun-kiosque)
 12. [Modèle de données du KMS](#12-modèle-de-données-du-kms)
+13. [Kiosque : ouverture de compte (KYC)](#13-kiosque--ouverture-de-compte-kyc)
+14. [Contrôles KYC et décision](#14-contrôles-kyc-et-décision)
+15. [Cycle de vie d'une demande d'ouverture de compte](#15-cycle-de-vie-dune-demande-douverture-de-compte)
+16. [Portail : la conformité traite un dossier](#16-portail--la-conformité-traite-un-dossier)
 
 ---
 
@@ -30,7 +34,7 @@ flowchart TB
         K1[Démarrage du kiosque]
         K2[Session client]
     end
-    subgraph P["🖥️ Portail — AGENT · SUPERVISOR · ADMIN"]
+    subgraph P["🖥️ Portail — AGENT · SUPERVISOR · ADMIN · COMPLIANCE"]
         direction LR
         P1[Supervision]
         P2[Paramétrage]
@@ -38,6 +42,7 @@ flowchart TB
 
     subgraph BANK["API bancaire"]
         AUTH["POST /auth/login"]
+        APPL["/account-applications<br/>(ouverture de compte, KYC)"]
         ACC["GET /accounts/{id}/balance<br/>GET /accounts/{id}/transactions"]
         TX["POST /deposits<br/>POST /withdrawals"]
     end
@@ -51,11 +56,13 @@ flowchart TB
 
     K1 --> KSVC & SET
     K2 --> AUTH & ACC & TX
-    P1 --> AUTH & KIO & DEV & KSVC
+    K1 --> APPL
+    P1 --> AUTH & KIO & DEV & KSVC & APPL
     P2 --> KIO & CAT & SET
 
     TX -. "vérifie la disponibilité" .-> KSVC
     TX -. "applique les règles" .-> SET
+    APPL -. "ACCOUNT_OPENING disponible ?" .-> KSVC
     DEV -. "recalcule" .-> KSVC
     CAT -. "recalcule" .-> KSVC
 ```
@@ -525,3 +532,150 @@ erDiagram
 ```
 
 Les paramètres de dépôt et de retrait (`/kms/deposit-settings`, `/kms/withdrawal-settings`) sont deux objets globaux, sans lien avec un kiosque particulier (voir OQ-7 dans `DECISIONS.md`).
+
+---
+
+## 13. Kiosque : ouverture de compte (KYC)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor PR as Prospect
+    participant K as Application kiosque
+    participant SC as Scanner et caméra
+    participant API as API
+
+    K->>API: GET /kms/kiosks/KIOSK-01/services
+    API-->>K: ACCOUNT_OPENING AVAILABLE (scanner + caméra OK)
+    PR->>K: « Ouvrir un compte », choisit le produit, accepte le traitement des données
+    K->>API: POST /account-applications {channel: KIOSK, kioskId, productCode, consents} (sans token)
+    API-->>K: 201 applicationId + applicationToken
+    Note over K,API: Tous les appels suivants : Authorization: Bearer applicationToken
+
+    PR->>SC: présente sa CIN, puis se prend en photo
+    SC-->>K: images recto, verso, selfie
+    K->>API: POST …/documents ID_FRONT · ID_BACK · SELFIE · PROOF_OF_ADDRESS
+    API-->>K: 201 (pour chaque pièce)
+
+    PR->>K: saisit son identité et répond au questionnaire KYC
+    K->>API: PATCH /account-applications/{id} {applicant}
+    API-->>K: 200
+
+    K->>API: POST …/phone-verification
+    API-->>K: 202 maskedPhone +2126******78
+    PR->>K: tape le code reçu par SMS
+    K->>API: POST …/phone-verification/confirm {code}
+    alt Code bon
+        API-->>K: 200 phoneVerified true
+    else Code faux
+        API-->>K: 422 OTP_INVALID (essais restants) · OTP_ATTEMPTS_EXCEEDED → renvoyer un code
+    end
+
+    K->>API: POST …/submit
+    alt Il manque quelque chose
+        API-->>K: 422 APPLICATION_INCOMPLETE + details
+        K-->>PR: guide vers l'élément manquant
+    else Contrôles KYC OK
+        API-->>K: 200 APPROVED + account {accountId, rib}
+        K-->>PR: affiche le RIB, imprime le contrat
+    else Revue nécessaire (PEP, client existant, FATCA…)
+        API-->>K: 200 UNDER_REVIEW
+        K-->>PR: « Demande en cours d'étude, vous serez contacté »
+    else Contrôle bloquant (sanctions, pièce expirée…)
+        API-->>K: 200 REJECTED
+        K-->>PR: message neutre, sans la raison
+    end
+```
+
+---
+
+## 14. Contrôles KYC et décision
+
+```mermaid
+flowchart TD
+    S([POST …/submit]) --> D{Dossier DRAFT ?}
+    D -- non --> E409[409 APPLICATION_NOT_EDITABLE]
+    D -- oui --> C{Complet ?<br/>questionnaire, pièces,<br/>téléphone vérifié, consentement}
+    C -- non --> E422[422 APPLICATION_INCOMPLETE<br/>+ details]
+    C -- oui --> K[Contrôles automatiques]
+
+    K --> K1[ID_DOCUMENT_VALIDITY<br/>pièce non expirée]
+    K --> K2[AGE<br/>18 ans minimum]
+    K --> K3[FACE_MATCH<br/>selfie = photo de la pièce]
+    K --> K4[SANCTIONS_SCREENING]
+    K --> K5[PEP_SCREENING]
+    K --> K6[DUPLICATE_CUSTOMER]
+    K --> K7[FATCA]
+
+    K1 & K2 & K3 & K4 & K5 & K6 & K7 --> R[Niveau de risque<br/>HIGH : PEP<br/>MEDIUM : étranger, US person, fonds « autre »<br/>LOW : sinon]
+
+    R --> F{Un contrôle FAIL ?}
+    F -- oui --> REJ[REJECTED<br/>outcome AUTO_REJECTED]
+    F -- non --> RV{Un contrôle REVIEW<br/>ou risque HIGH ?}
+    RV -- oui --> UR[UNDER_REVIEW<br/>outcome MANUAL_REVIEW]
+    RV -- non --> OK[APPROVED<br/>outcome AUTO_APPROVED<br/>compte ouvert + RIB]
+
+    UR --> DEC{Décision COMPLIANCE<br/>POST …/decision}
+    DEC -- APPROVE --> OK2[APPROVED<br/>compte ouvert + RIB]
+    DEC -- REJECT + reasonCode --> REJ2[REJECTED]
+
+    classDef bad fill:#fde2e1,stroke:#c0392b,color:#000
+    classDef mid fill:#fff4d6,stroke:#b9770e,color:#000
+    classDef good fill:#e3f6e5,stroke:#2e7d32,color:#000
+    class E409,E422,REJ,REJ2 bad
+    class UR mid
+    class OK,OK2 good
+```
+
+---
+
+## 15. Cycle de vie d'une demande d'ouverture de compte
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT: POST /account-applications
+    DRAFT --> DRAFT: PATCH · documents · phone-verification
+    DRAFT --> APPROVED: submit (KYC OK)
+    DRAFT --> UNDER_REVIEW: submit (REVIEW ou risque HIGH)
+    DRAFT --> REJECTED: submit (un contrôle FAIL)
+    UNDER_REVIEW --> APPROVED: decision APPROVE (COMPLIANCE)
+    UNDER_REVIEW --> REJECTED: decision REJECT (COMPLIANCE)
+    DRAFT --> CANCELLED: cancel
+    UNDER_REVIEW --> CANCELLED: cancel
+    APPROVED --> [*]: compte ouvert
+    REJECTED --> [*]
+    CANCELLED --> [*]
+```
+
+---
+
+## 16. Portail : la conformité traite un dossier
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor CO as Responsable conformité
+    participant P as Portail
+    participant API as API
+
+    CO->>P: se connecte (rôle COMPLIANCE)
+    P->>API: GET /account-applications?status=UNDER_REVIEW
+    API-->>P: [APP-1002 Karim Alaoui · risque HIGH]
+    CO->>P: ouvre APP-1002
+    P->>API: GET /account-applications/APP-1002
+    API-->>P: kyc.checks : PEP_SCREENING REVIEW (PEP_DECLARED)
+    P->>API: GET /account-applications/APP-1002/documents
+    API-->>P: CIN recto/verso, selfie, justificatif de domicile
+
+    Note over CO: Diligences renforcées :<br/>origine des fonds, validation hiérarchique
+    alt Accepté
+        CO->>P: « Approuver » + commentaire
+        P->>API: POST …/decision {decision: APPROVE, comment}
+        API-->>P: 200 APPROVED + account {accountId, rib}
+    else Refusé
+        CO->>P: « Refuser » + motif + commentaire
+        P->>API: POST …/decision {decision: REJECT, reasonCode, comment}
+        API-->>P: 200 REJECTED
+    end
+    Note over P,API: La décision est tracée dans review (decidedBy, decidedAt)
+```
