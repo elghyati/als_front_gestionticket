@@ -13,7 +13,8 @@
     "api:check-types": "npm run api:types && git diff --exit-code -- src/api/schema.d.ts",
     "check": "npm run api:lint && npm run typecheck && npm test",
     "mock:server": "tsx src/mocks/http-server.ts",
-    "postman:build": "tsx scripts/build-postman.ts"
+    "postman:build": "tsx scripts/build-postman.ts",
+    "docs:diagrams": "tsx scripts/render-diagrams.ts"
   },
   "dependencies": {
     "openapi-fetch": "^0.17.0"
